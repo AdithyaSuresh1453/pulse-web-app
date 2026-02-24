@@ -1,62 +1,99 @@
-import { useState, useEffect } from 'react';
-import { Smartphone, MapPin, Radio, Volume2, Navigation } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Smartphone, MapPin, Radio, Volume2, Navigation, Clock, RefreshCw, AlertCircle } from 'lucide-react';
+import { showNotification } from '../../components/NotificationSystem';
 
 export function PhoneRecovery() {
-  const [location, setLocation] = useState({ lat: 0, lng: 0 });
+  const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [locationError, setLocationError] = useState('');
   const [isTracking, setIsTracking] = useState(false);
   const [lastSeen, setLastSeen] = useState<Date>(new Date());
   const [isPlaying, setIsPlaying] = useState(false);
   const [bluetoothSignal, setBluetoothSignal] = useState(0);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const audioRef = useRef<AudioContext | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  const fetchLocation = () => {
+    if (!navigator.geolocation) {
+      setLocationError('Geolocation is not supported by your browser.');
+      return;
+    }
+    setLocationLoading(true);
+    setLocationError('');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLastSeen(new Date());
+        setLocationLoading(false);
+      },
+      (error) => {
+        setLocationLoading(false);
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            setLocationError('Location permission denied. Please allow access in your browser settings.');
+            break;
+          case error.POSITION_UNAVAILABLE:
+            setLocationError('Location information is unavailable.');
+            break;
+          case error.TIMEOUT:
+            setLocationError('Location request timed out. Please try again.');
+            break;
+          default:
+            setLocationError('Unable to retrieve location.');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-        }
-      );
-    }
+    fetchLocation();
   }, []);
 
+  // Live tracking with watchPosition
   useEffect(() => {
-    let interval: NodeJS.Timeout;
+    if (isTracking) {
+      if (navigator.geolocation) {
+        watchIdRef.current = navigator.geolocation.watchPosition(
+          (position) => {
+            setLocation({
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+            });
+            setLastSeen(new Date());
+          },
+          () => {},
+          { enableHighAccuracy: true }
+        );
+      }
+    } else {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    }
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, [isTracking]);
+
+  // Simulated bluetooth signal while tracking
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
     if (isTracking) {
       interval = setInterval(() => {
         setBluetoothSignal(Math.random() * 100);
       }, 1000);
+    } else {
+      setBluetoothSignal(0);
     }
     return () => clearInterval(interval);
   }, [isTracking]);
-
-  const startTracking = () => {
-    setIsTracking(true);
-    setLastSeen(new Date());
-    speak('Phone tracking started');
-  };
-
-  const stopTracking = () => {
-    setIsTracking(false);
-    setBluetoothSignal(0);
-    speak('Phone tracking stopped');
-  };
-
-  const playSound = () => {
-    setIsPlaying(true);
-    speak('Playing sound on your phone');
-
-    const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLUgjMGGGS578yKOgkVY7fq5KVXFA1Hn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFA==');
-    audio.play();
-
-    setTimeout(() => {
-      setIsPlaying(false);
-    }, 3000);
-  };
 
   const speak = (text: string) => {
     if ('speechSynthesis' in window) {
@@ -64,6 +101,57 @@ export function PhoneRecovery() {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.rate = 0.9;
       window.speechSynthesis.speak(utterance);
+    }
+  };
+
+  const startTracking = () => {
+    setIsTracking(true);
+    setLastSeen(new Date());
+    speak('Phone tracking started');
+    showNotification('Tracking Started', 'Phone location tracking is now active.', 'success');
+  };
+
+  const stopTracking = () => {
+    setIsTracking(false);
+    speak('Phone tracking stopped');
+    showNotification('Tracking Stopped', 'Phone location tracking has been stopped.', 'info');
+  };
+
+  // Generate a real alert sound using Web Audio API
+  const playSound = () => {
+    setIsPlaying(true);
+    speak('Playing alert sound');
+    showNotification('Sound Playing', 'Alert sound is playing on this device.', 'info');
+
+    try {
+      const ctx = new AudioContext();
+      audioRef.current = ctx;
+
+      const playBeep = (time: number, freq: number) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, time);
+        gain.gain.setValueAtTime(0.6, time);
+        gain.gain.exponentialRampToValueAtTime(0.001, time + 0.4);
+        osc.start(time);
+        osc.stop(time + 0.4);
+      };
+
+      const now = ctx.currentTime;
+      // Play 5 ascending beeps
+      [880, 1100, 1320, 1540, 1760].forEach((freq, i) => {
+        playBeep(now + i * 0.5, freq);
+      });
+
+      setTimeout(() => {
+        setIsPlaying(false);
+        ctx.close();
+      }, 3000);
+    } catch {
+      setIsPlaying(false);
     }
   };
 
@@ -80,6 +168,10 @@ export function PhoneRecovery() {
     return 'text-red-600 dark:text-red-400';
   };
 
+  const mapUrl = location
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.01},${location.lat - 0.01},${location.lng + 0.01},${location.lat + 0.01}&layer=mapnik&marker=${location.lat},${location.lng}`
+    : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -92,31 +184,57 @@ export function PhoneRecovery() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Map Panel */}
         <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-            Device Location
-          </h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Device Location</h2>
+            <button
+              onClick={fetchLocation}
+              disabled={locationLoading}
+              className="p-2 rounded-xl bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors disabled:opacity-50"
+              title="Refresh location"
+            >
+              <RefreshCw className={`w-4 h-4 text-gray-600 dark:text-gray-400 ${locationLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
 
-          <div className="bg-gray-100 dark:bg-gray-700 rounded-2xl h-64 mb-4 overflow-hidden relative">
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <MapPin className="w-12 h-12 text-blue-600 dark:text-blue-400 mx-auto mb-2" />
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Simulated Map View
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                  Lat: {location.lat.toFixed(6)}
-                </p>
-                <p className="text-xs text-gray-500 dark:text-gray-500">
-                  Lng: {location.lng.toFixed(6)}
-                </p>
+          {/* Map */}
+          <div className="rounded-2xl h-64 mb-4 overflow-hidden relative bg-gray-100 dark:bg-gray-700">
+            {locationError ? (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
+                <AlertCircle className="w-10 h-10 text-red-400" />
+                <p className="text-sm text-red-600 dark:text-red-400 text-center">{locationError}</p>
+                <button
+                  onClick={fetchLocation}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Try Again
+                </button>
               </div>
-            </div>
-
-            {isTracking && (
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-                <div className="w-4 h-4 bg-blue-600 rounded-full animate-ping"></div>
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-blue-600 rounded-full"></div>
+            ) : locationLoading ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : mapUrl ? (
+              <>
+                <iframe
+                  src={mapUrl}
+                  width="100%"
+                  height="100%"
+                  style={{ border: 0 }}
+                  title="Device Location Map"
+                  loading="lazy"
+                />
+                {isTracking && (
+                  <div className="absolute top-3 right-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 shadow">
+                    <span className="w-2 h-2 bg-white rounded-full animate-ping inline-block" />
+                    LIVE
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <MapPin className="w-10 h-10 text-gray-400" />
               </div>
             )}
           </div>
@@ -125,9 +243,7 @@ export function PhoneRecovery() {
             <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Last Seen
-                </span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Last Seen</span>
               </div>
               <span className="text-sm text-gray-600 dark:text-gray-400">
                 {lastSeen.toLocaleTimeString()}
@@ -137,22 +253,28 @@ export function PhoneRecovery() {
             <div className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl">
               <div className="flex items-center gap-2">
                 <Navigation className="w-5 h-5 text-gray-600 dark:text-gray-400" />
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                  Status
-                </span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</span>
               </div>
               <span className={`text-sm font-medium ${isTracking ? 'text-green-600 dark:text-green-400' : 'text-gray-600 dark:text-gray-400'}`}>
-                {isTracking ? 'Tracking' : 'Inactive'}
+                {isTracking ? '🟢 Tracking' : 'Inactive'}
               </span>
             </div>
+
+            {location && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+                <p className="text-xs text-blue-700 dark:text-blue-400 font-medium mb-1">Coordinates</p>
+                <p className="text-xs text-blue-600 dark:text-blue-300 font-mono">
+                  {location.lat.toFixed(6)}, {location.lng.toFixed(6)}
+                </p>
+              </div>
+            )}
           </div>
         </div>
 
+        {/* Actions + Bluetooth Panel */}
         <div className="space-y-6">
           <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-              Actions
-            </h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Actions</h2>
 
             <div className="space-y-3">
               <button
@@ -173,23 +295,31 @@ export function PhoneRecovery() {
                 className="w-full py-4 bg-gradient-to-r from-green-500 to-green-600 hover:from-green-600 hover:to-green-700 text-white rounded-2xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Volume2 className={`w-5 h-5 ${isPlaying ? 'animate-pulse' : ''}`} />
-                {isPlaying ? 'Playing Sound...' : 'Play Sound'}
+                {isPlaying ? 'Playing Sound...' : 'Play Alert Sound'}
               </button>
+
+              {location && (
+                <a
+                  href={`https://www.google.com/maps?q=${location.lat},${location.lng}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-2xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-500/30"
+                >
+                  <MapPin className="w-5 h-5" />
+                  Open in Google Maps
+                </a>
+              )}
             </div>
           </div>
 
           <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
-            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">
-              Bluetooth Signal
-            </h2>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Bluetooth Signal</h2>
 
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Radio className={`w-5 h-5 ${getSignalColor()} ${isTracking ? 'animate-pulse' : ''}`} />
-                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Signal Strength
-                  </span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Signal Strength</span>
                 </div>
                 <span className={`text-sm font-medium ${getSignalColor()}`}>
                   {getSignalStrength()}
@@ -205,7 +335,7 @@ export function PhoneRecovery() {
 
               <p className="text-xs text-gray-500 dark:text-gray-400">
                 {isTracking
-                  ? 'Bluetooth scanning active - Move closer to strengthen signal'
+                  ? 'Bluetooth scanning active — move closer to strengthen signal'
                   : 'Start tracking to enable Bluetooth scanning'}
               </p>
             </div>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Upload, Image as ImageIcon, Loader } from 'lucide-react';
+import { Upload, Loader } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { showNotification } from '../../components/NotificationSystem';
 import { useAuth } from '../../contexts/AuthContext';
 
 export function AddObject() {
@@ -76,9 +77,12 @@ export function AddObject() {
         metadata: { object_name: formData.object_name },
       });
 
+      showNotification('Object Added', `${formData.object_name} has been registered for tracking.`, 'success');
       navigate('/dashboard/objects');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      const msg = err instanceof Error ? err.message : 'An error occurred';
+      setError(msg);
+      showNotification('Error', msg, 'error');
       setLoading(false);
     }
   };

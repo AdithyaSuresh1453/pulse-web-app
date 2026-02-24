@@ -1,8 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
 import { Camera, CameraOff, Volume2, AlertCircle } from 'lucide-react';
-import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import '@tensorflow/tfjs';
+
+// Inline type declarations for @tensorflow-models/coco-ssd
+// (the package ships JS but has no bundled .d.ts in some setups)
+declare module '@tensorflow-models/coco-ssd' {
+  export interface DetectedObject {
+    bbox: [number, number, number, number];
+    class: string;
+    score: number;
+  }
+  export interface ObjectDetection {
+    detect(
+      img: HTMLVideoElement | HTMLCanvasElement | HTMLImageElement
+    ): Promise<DetectedObject[]>;
+  }
+  export function load(config?: object): Promise<ObjectDetection>;
+}
+import * as cocoSsd from '@tensorflow-models/coco-ssd';
 import { supabase } from '../../lib/supabase';
+import { showNotification } from '../../components/NotificationSystem';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface Detection {
@@ -106,7 +123,7 @@ export function LiveCamera() {
 
     const detectedObjects: Detection[] = [];
 
-    predictions.forEach((prediction) => {
+    predictions.forEach((prediction: cocoSsd.DetectedObject) => {
       const [x, y, width, height] = prediction.bbox;
 
       ctx.strokeStyle = '#10B981';
@@ -137,7 +154,7 @@ export function LiveCamera() {
 
     setDetections(detectedObjects);
 
-    if (predictions.length > 0 && predictions.some((p) => p.score > 0.7)) {
+    if (predictions.length > 0 && predictions.some((p: cocoSsd.DetectedObject) => p.score > 0.7)) {
       const topDetection = predictions[0];
       speak(`Detected ${topDetection.class} with ${Math.round(topDetection.score * 100)} percent confidence`);
     }
@@ -163,6 +180,12 @@ export function LiveCamera() {
           last_detected_time: new Date().toISOString(),
         })
         .eq('id', matchingObject.id);
+      showNotification(
+        '📷 Object Detected',
+        `${matchingObject.object_name} spotted in Camera View (${Math.round(confidence * 100)}% confidence)`,
+        'info',
+        false
+      );
     }
 
     await supabase.from('activity_logs').insert({

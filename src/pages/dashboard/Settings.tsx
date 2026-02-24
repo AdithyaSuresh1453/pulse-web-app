@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { User, Mic, Bell, Shield, Save, Fingerprint } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { showNotification } from '../../components/NotificationSystem';
 import { useAuth } from '../../contexts/AuthContext';
 import { VoiceLock } from '../../components/VoiceLock';
 
@@ -55,8 +56,10 @@ export function Settings() {
 
     if (error) {
       setMessage('Failed to save settings');
+      showNotification('Save Failed', 'Could not save your settings. Please try again.', 'error');
     } else {
       setMessage('Settings saved successfully');
+      showNotification('Settings Saved', 'Your preferences have been updated.', 'success');
     }
 
     setSaving(false);
@@ -67,8 +70,10 @@ export function Settings() {
     const { error } = await registerWebAuthn();
     if (error) {
       setMessage(`WebAuthn setup failed: ${error.message}`);
+      showNotification('WebAuthn Failed', error.message, 'error');
     } else {
       setMessage('WebAuthn registered successfully');
+      showNotification('WebAuthn Enabled', 'Biometric authentication is now set up.', 'success');
     }
     setTimeout(() => setMessage(''), 3000);
   };

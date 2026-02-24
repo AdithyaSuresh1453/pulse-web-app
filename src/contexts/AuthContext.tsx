@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+import { showNotification } from '../components/NotificationSystem';
 
 interface AuthContextType {
   user: User | null;
@@ -42,6 +43,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .from('user_preferences')
               .insert({ user_id: session.user.id });
           }
+
+          const email = session.user.email ?? 'your account';
+          showNotification(
+            '👋 Welcome back!',
+            `Signed in as ${email}`,
+            'success'
+          );
+        }
+
+        if (event === 'SIGNED_OUT') {
+          showNotification('Signed out', 'You have been signed out successfully.', 'info');
         }
       })();
     });
@@ -51,11 +63,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({ email, password });
+    if (!error) {
+      showNotification('Account Created', `Welcome! Your account for ${email} is ready.`, 'success');
+    } else {
+      showNotification('Sign Up Failed', error.message, 'error');
+    }
     return { error: error ? new Error(error.message) : null };
   };
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      showNotification('Sign In Failed', error.message, 'error');
+    }
     return { error: error ? new Error(error.message) : null };
   };
 

@@ -2,6 +2,34 @@ import { useState, useEffect } from 'react';
 import { Mic, MicOff, Volume2 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
+// Fix: Declare browser Speech Recognition types not fully covered by TypeScript's lib.dom.d.ts
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognitionInstance;
+    webkitSpeechRecognition: new () => SpeechRecognitionInstance;
+  }
+
+  interface SpeechRecognitionInstance extends EventTarget {
+    continuous: boolean;
+    interimResults: boolean;
+    lang: string;
+    start(): void;
+    stop(): void;
+    onresult: ((event: SpeechRecognitionResultEvent) => void) | null;
+    onerror: ((event: SpeechRecognitionErrorEventInstance) => void) | null;
+    onend: (() => void) | null;
+  }
+
+  interface SpeechRecognitionResultEvent extends Event {
+    results: SpeechRecognitionResultList;
+  }
+
+  interface SpeechRecognitionErrorEventInstance extends Event {
+    error: string;
+    message: string;
+  }
+}
+
 interface VoiceLockProps {
   mode: 'register' | 'verify';
   onSuccess: () => void;
@@ -14,17 +42,17 @@ export function VoiceLock({ mode, onSuccess, onCancel }: VoiceLockProps) {
   const [passphrase, setPassphrase] = useState('');
   const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
-  const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
+  const [recognition, setRecognition] = useState<SpeechRecognitionInstance | null>(null);
 
   useEffect(() => {
     if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
-      const SpeechRecognition = (window as unknown as { webkitSpeechRecognition: typeof window.SpeechRecognition }).webkitSpeechRecognition || window.SpeechRecognition;
-      const recognitionInstance = new SpeechRecognition();
+      const SpeechRecognitionConstructor = window.webkitSpeechRecognition || window.SpeechRecognition;
+      const recognitionInstance = new SpeechRecognitionConstructor();
       recognitionInstance.continuous = false;
       recognitionInstance.interimResults = false;
       recognitionInstance.lang = 'en-US';
 
-      recognitionInstance.onresult = (event: SpeechRecognitionEvent) => {
+      recognitionInstance.onresult = (event: SpeechRecognitionResultEvent) => {
         const speechResult = event.results[0][0].transcript;
         const confidence = event.results[0][0].confidence;
 
@@ -44,7 +72,7 @@ export function VoiceLock({ mode, onSuccess, onCancel }: VoiceLockProps) {
         }
       };
 
-      recognitionInstance.onerror = (event: SpeechRecognitionErrorEvent) => {
+      recognitionInstance.onerror = (event: SpeechRecognitionErrorEventInstance) => {
         setIsListening(false);
         setError(`Speech recognition error: ${event.error}`);
         speak('An error occurred. Please try again.');
@@ -85,7 +113,7 @@ export function VoiceLock({ mode, onSuccess, onCancel }: VoiceLockProps) {
 
     try {
       recognition.start();
-    } catch (error) {
+    } catch {
       setError('Failed to start speech recognition');
       setIsListening(false);
     }
@@ -98,7 +126,7 @@ export function VoiceLock({ mode, onSuccess, onCancel }: VoiceLockProps) {
     }
   };
 
-  const handleRegister = async (spokenText: string) => {
+  const handleRegister = async (_spokenText: string) => {
     if (!passphrase.trim()) {
       setError('Please enter a passphrase first');
       return;

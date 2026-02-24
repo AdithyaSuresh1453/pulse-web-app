@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Package, Search, Edit2, Trash2, MapPin, Clock } from 'lucide-react';
+import { Package, Search, Trash2, MapPin, Clock } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { showNotification } from '../../components/NotificationSystem';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface ObjectType {
@@ -58,8 +59,12 @@ export function RegisteredObjects() {
     const { error } = await supabase.from('objects').delete().eq('id', id);
 
     if (!error) {
+      const deleted = objects.find(o => o.id === id);
       setObjects(objects.filter((obj) => obj.id !== id));
       setDeleteId(null);
+      showNotification('Object Deleted', `${deleted?.object_name || 'Object'} has been removed.`, 'info');
+    } else {
+      showNotification('Delete Failed', 'Could not delete the object. Try again.', 'error');
     }
   };
 

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { X, AlertCircle } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { X, CheckCircle, AlertCircle, AlertTriangle, Info } from 'lucide-react';
 
 interface Notification {
   id: string;
@@ -11,76 +11,82 @@ interface Notification {
 export function NotificationSystem() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
 
+  const removeNotification = useCallback((id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
   useEffect(() => {
-    const handleNotification = (event: CustomEvent) => {
+    const handleNotification = (event: Event) => {
+      const e = event as CustomEvent;
       const notification: Notification = {
-        id: Date.now().toString(),
-        ...event.detail,
+        id: `${Date.now()}-${Math.random()}`,
+        type: e.detail.type ?? 'info',
+        title: e.detail.title ?? '',
+        message: e.detail.message ?? '',
       };
 
       setNotifications((prev) => [...prev, notification]);
 
-      if (event.detail.sound) {
-        const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLUgjMGGGS578yKOgkVY7fq5KVXFA1Hn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFAxHn+TyvmshBSuBzvLUgjMGGGS578yKOgkVY7fq5KNWFA==');
-        audio.play();
-      }
-
       setTimeout(() => {
-        removeNotification(notification.id);
+        setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
       }, 5000);
     };
 
-    window.addEventListener('pulse-notification' as keyof WindowEventMap, handleNotification as EventListener);
-
-    return () => {
-      window.removeEventListener('pulse-notification' as keyof WindowEventMap, handleNotification as EventListener);
-    };
+    window.addEventListener('pulse-notification', handleNotification);
+    return () => window.removeEventListener('pulse-notification', handleNotification);
   }, []);
-
-  const removeNotification = (id: string) => {
-    setNotifications((prev) => prev.filter((n) => n.id !== id));
-  };
-
-  const getNotificationStyles = (type: string) => {
-    switch (type) {
-      case 'error':
-        return 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-700 dark:text-red-400';
-      case 'warning':
-        return 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400';
-      case 'success':
-        return 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400';
-      default:
-        return 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-400';
-    }
-  };
 
   if (notifications.length === 0) return null;
 
+  const icons = {
+    success: <CheckCircle className="w-5 h-5 flex-shrink-0 mt-0.5 text-green-500" />,
+    error:   <AlertCircle  className="w-5 h-5 flex-shrink-0 mt-0.5 text-red-500"   />,
+    warning: <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-yellow-500" />,
+    info:    <Info          className="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-500"  />,
+  };
+
+  const styles = {
+    success: 'bg-white dark:bg-gray-800 border-green-400 shadow-green-100 dark:shadow-green-900/20',
+    error:   'bg-white dark:bg-gray-800 border-red-400   shadow-red-100   dark:shadow-red-900/20',
+    warning: 'bg-white dark:bg-gray-800 border-yellow-400 shadow-yellow-100 dark:shadow-yellow-900/20',
+    info:    'bg-white dark:bg-gray-800 border-blue-400  shadow-blue-100  dark:shadow-blue-900/20',
+  };
+
   return (
-    <div className="fixed top-6 right-6 z-50 space-y-3 max-w-md">
-      {notifications.map((notification) => (
-        <div
-          key={notification.id}
-          className={`border-2 rounded-2xl p-4 shadow-lg backdrop-blur-xl animate-slide-in ${getNotificationStyles(
-            notification.type
-          )}`}
-        >
-          <div className="flex items-start gap-3">
-            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+    <>
+      <style>{`
+        @keyframes toast-in {
+          from { opacity: 0; transform: translateX(100%); }
+          to   { opacity: 1; transform: translateX(0);    }
+        }
+        .toast-animate { animation: toast-in 0.3s ease forwards; }
+      `}</style>
+      <div
+        style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', zIndex: 99999 }}
+        className="flex flex-col gap-3 max-w-sm w-full pointer-events-none"
+      >
+        {notifications.map((n) => (
+          <div
+            key={n.id}
+            className={`toast-animate pointer-events-auto border-2 rounded-2xl p-4 shadow-xl flex items-start gap-3 ${styles[n.type]}`}
+          >
+            {icons[n.type]}
             <div className="flex-1 min-w-0">
-              <h4 className="font-semibold text-sm mb-1">{notification.title}</h4>
-              <p className="text-sm opacity-90">{notification.message}</p>
+              <p className="font-semibold text-sm text-gray-900 dark:text-white">{n.title}</p>
+              {n.message && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-0.5">{n.message}</p>
+              )}
             </div>
             <button
-              onClick={() => removeNotification(notification.id)}
-              className="flex-shrink-0 hover:opacity-70 transition-opacity"
+              onClick={() => removeNotification(n.id)}
+              className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
             >
-              <X className="w-5 h-5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
-        </div>
-      ))}
-    </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -88,10 +94,11 @@ export function showNotification(
   title: string,
   message: string,
   type: 'info' | 'warning' | 'error' | 'success' = 'info',
-  sound = true
+  _sound = true
 ) {
-  const event = new CustomEvent('pulse-notification', {
-    detail: { title, message, type, sound },
-  });
-  window.dispatchEvent(event);
+  window.dispatchEvent(
+    new CustomEvent('pulse-notification', {
+      detail: { title, message, type },
+    })
+  );
 }
