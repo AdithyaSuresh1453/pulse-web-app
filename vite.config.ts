@@ -7,4 +7,17 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    rollupOptions: {
+      input: {
+        main: './index.html',
+      },
+    },
+  },
+  // Ensure manifest.json and sw.js are served with correct headers
+  server: {
+    headers: {
+      'Service-Worker-Allowed': '/',
+    },
+  },
 });
