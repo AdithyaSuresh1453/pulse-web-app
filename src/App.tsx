@@ -16,6 +16,7 @@ import { AlertsHistory } from './pages/dashboard/AlertsHistory';
 import { PhoneRecovery } from './pages/dashboard/PhoneRecovery';
 import { Settings } from './pages/dashboard/Settings';
 import { BluetoothDevices } from './pages/dashboard/BluetoothDevices';
+import { Rooms } from './pages/dashboard/Rooms';
 
 function App() {
   return (
@@ -109,6 +110,17 @@ function App() {
                 <ProtectedRoute>
                   <DashboardLayout>
                     <BluetoothDevices />
+                  </DashboardLayout>
+                  <VoiceAssistant />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/dashboard/rooms"
+              element={
+                <ProtectedRoute>
+                  <DashboardLayout>
+                    <Rooms />
                   </DashboardLayout>
                   <VoiceAssistant />
                 </ProtectedRoute>

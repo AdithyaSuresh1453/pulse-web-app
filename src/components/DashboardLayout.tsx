@@ -14,6 +14,7 @@ import {
   Sun,
   Moon,
   Bluetooth,
+  Home,
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -25,14 +26,15 @@ interface DashboardLayoutProps {
 }
 
 const navItems = [
-  { icon: LayoutDashboard, label: 'Overview', path: '/dashboard' },
-  { icon: Package, label: 'Registered Objects', path: '/dashboard/objects' },
-  { icon: Plus, label: 'Add Object', path: '/dashboard/add-object' },
-  { icon: Camera, label: 'Live Camera Detection', path: '/dashboard/camera' },
-  { icon: Bell, label: 'Alerts & History', path: '/dashboard/alerts' },
-  { icon: Smartphone, label: 'Phone Recovery', path: '/dashboard/phone-recovery' },
-  { icon: Bluetooth, label: 'Device Connections', path: '/dashboard/bluetooth' },
-  { icon: Settings, label: 'Settings', path: '/dashboard/settings' },
+  { icon: LayoutDashboard, label: 'Overview',            path: '/dashboard' },
+  { icon: Package,         label: 'Registered Objects',  path: '/dashboard/objects' },
+  { icon: Plus,            label: 'Add Object',          path: '/dashboard/add-object' },
+  { icon: Home,            label: 'Rooms',               path: '/dashboard/rooms' },
+  { icon: Camera,          label: 'Live Camera',         path: '/dashboard/camera' },
+  { icon: Bell,            label: 'Alerts & History',    path: '/dashboard/alerts' },
+  { icon: Smartphone,      label: 'Phone Recovery',      path: '/dashboard/phone-recovery' },
+  { icon: Bluetooth,       label: 'Device Connections',  path: '/dashboard/bluetooth' },
+  { icon: Settings,        label: 'Settings',            path: '/dashboard/settings' },
 ];
 
 export function DashboardLayout({ children }: DashboardLayoutProps) {
@@ -124,16 +126,6 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </nav>
 
         <div className="absolute bottom-6 left-6 right-6 space-y-3">
-          <button
-            onClick={toggleTheme}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-          >
-            {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            <span className="font-medium">
-              {theme === 'dark' ? 'Light Mode' : 'Dark Mode'}
-            </span>
-          </button>
-
           <button
             onClick={handleSignOut}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"

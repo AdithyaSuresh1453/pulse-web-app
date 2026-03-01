@@ -34,11 +34,21 @@ export function Settings() {
 
     if (data) {
       setPreferences({
-        voice_assistant_enabled: data.voice_assistant_enabled,
-        camera_detection_enabled: data.camera_detection_enabled,
-        notification_sound_enabled: data.notification_sound_enabled,
-        alert_sensitivity: data.alert_sensitivity,
+        voice_assistant_enabled: data.voice_assistant_enabled ?? true,
+        camera_detection_enabled: data.camera_detection_enabled ?? false,
+        notification_sound_enabled: data.notification_sound_enabled ?? true,
+        alert_sensitivity: data.alert_sensitivity ?? 'medium',
       });
+    } else {
+      // No row yet — create one with defaults
+      const defaults = {
+        user_id: user.id,
+        voice_assistant_enabled: true,
+        camera_detection_enabled: false,
+        notification_sound_enabled: true,
+        alert_sensitivity: 'medium',
+      };
+      await supabase.from('user_preferences').upsert(defaults, { onConflict: 'user_id' });
     }
 
     setLoading(false);
@@ -52,8 +62,7 @@ export function Settings() {
 
     const { error } = await supabase
       .from('user_preferences')
-      .update(preferences)
-      .eq('user_id', user.id);
+      .upsert({ user_id: user.id, ...preferences }, { onConflict: 'user_id' });
 
     if (error) {
       setMessage('Failed to save settings');
@@ -191,62 +200,33 @@ export function Settings() {
         </div>
 
         <div className="space-y-4">
-          <label className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl cursor-pointer">
-            <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                Voice Assistant
-              </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Enable voice commands and announcements
-              </p>
+          {[
+            { label: 'Voice Assistant', desc: 'Enable voice commands and announcements', key: 'voice_assistant_enabled' as const },
+            { label: 'Auto Camera Detection', desc: 'Automatically start camera detection on dashboard load', key: 'camera_detection_enabled' as const },
+            { label: 'Notification Sounds', desc: 'Play sound for alerts and notifications', key: 'notification_sound_enabled' as const },
+          ].map(({ label, desc, key }) => (
+            <div
+              key={key}
+              onClick={() => {
+                const updated = { ...preferences, [key]: !preferences[key] };
+                setPreferences(updated);
+                supabase.from('user_preferences').upsert(
+                  { user_id: user!.id, ...updated },
+                  { onConflict: 'user_id' }
+                );
+              }}
+              className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors select-none"
+            >
+              <div>
+                <p className="text-sm font-medium text-gray-900 dark:text-white">{label}</p>
+                <p className="text-xs text-gray-600 dark:text-gray-400">{desc}</p>
+              </div>
+              {/* Toggle pill */}
+              <div className={`relative w-12 h-6 rounded-full transition-colors duration-200 ${preferences[key] ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}>
+                <div className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow-md transition-transform duration-200 ${preferences[key] ? 'translate-x-6' : 'translate-x-0'}`} />
+              </div>
             </div>
-            <input
-              type="checkbox"
-              checked={preferences.voice_assistant_enabled}
-              onChange={(e) =>
-                setPreferences({ ...preferences, voice_assistant_enabled: e.target.checked })
-              }
-              className="w-12 h-6 rounded-full bg-gray-200 dark:bg-gray-600 appearance-none cursor-pointer transition-colors checked:bg-blue-600"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl cursor-pointer">
-            <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                Auto Camera Detection
-              </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Automatically start camera detection on dashboard load
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              checked={preferences.camera_detection_enabled}
-              onChange={(e) =>
-                setPreferences({ ...preferences, camera_detection_enabled: e.target.checked })
-              }
-              className="w-12 h-6 rounded-full bg-gray-200 dark:bg-gray-600 appearance-none cursor-pointer transition-colors checked:bg-blue-600"
-            />
-          </label>
-
-          <label className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl cursor-pointer">
-            <div>
-              <p className="text-sm font-medium text-gray-900 dark:text-white">
-                Notification Sounds
-              </p>
-              <p className="text-xs text-gray-600 dark:text-gray-400">
-                Play sound for alerts and notifications
-              </p>
-            </div>
-            <input
-              type="checkbox"
-              checked={preferences.notification_sound_enabled}
-              onChange={(e) =>
-                setPreferences({ ...preferences, notification_sound_enabled: e.target.checked })
-              }
-              className="w-12 h-6 rounded-full bg-gray-200 dark:bg-gray-600 appearance-none cursor-pointer transition-colors checked:bg-blue-600"
-            />
-          </label>
+          ))}
 
           <div className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl">
             <label className="block text-sm font-medium text-gray-900 dark:text-white mb-3">

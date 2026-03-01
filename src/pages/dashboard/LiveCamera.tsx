@@ -96,12 +96,11 @@ function findMatch(cocoClass: string, objects: RegisteredObject[]): RegisteredOb
   });
 }
 
-function getCurrentLocationLabel(): string {
-  const h = new Date().getHours();
-  if (h >= 6  && h < 12) return 'Living Area (Morning)';
-  if (h >= 12 && h < 17) return 'Living Area (Afternoon)';
-  if (h >= 17 && h < 21) return 'Living Area (Evening)';
-  return 'Living Area (Night)';
+interface Room {
+  id: string;
+  room_name: string;
+  floor: string;
+  image_url: string;
 }
 
 // ─── Draw a box with corner brackets + label ─────────────────────────────────
@@ -195,6 +194,8 @@ export function LiveCamera() {
   const [detections,    setDetections]    = useState<Detection[]>([]);
   const [unusualAlerts, setUnusualAlerts] = useState<string[]>([]);
   const [registeredObjects, setRegisteredObjects] = useState<RegisteredObject[]>([]);
+  const [rooms, setRooms]               = useState<Room[]>([]);
+  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
 
   // ── Load model ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -219,6 +220,35 @@ export function LiveCamera() {
       .eq('user_id', user.id)
       .then(({ data }) => { if (data) setRegisteredObjects(data as RegisteredObject[]); });
   }, [user]);
+
+  // ── Load rooms ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('rooms')
+      .select('id, room_name, floor, image_url')
+      .eq('user_id', user.id)
+      .order('floor').order('room_name')
+      .then(({ data }) => { if (data) setRooms(data as Room[]); });
+  }, [user]);
+
+  // ── Auto-start camera if preference is enabled ────────────────────────────
+  const autoStartDoneRef = useRef(false);
+  useEffect(() => {
+    if (!user || !modelLoaded || autoStartDoneRef.current) return;
+    supabase
+      .from('user_preferences')
+      .select('camera_detection_enabled')
+      .eq('user_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.camera_detection_enabled && !isRunning.current) {
+          autoStartDoneRef.current = true;
+          // Small delay to ensure video element is mounted
+          setTimeout(() => startCamera(), 500);
+        }
+      });
+  }, [user, modelLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Voice ─────────────────────────────────────────────────────────────────
   const lastSpoken = useRef('');
@@ -279,7 +309,9 @@ export function LiveCamera() {
     try { preds = await model.detect(video); }
     catch { if (isRunning.current) rafRef.current = requestAnimationFrame(runDetection); return; }
 
-    const currentLocation = getCurrentLocationLabel();
+    const currentLocation = selectedRoom
+      ? `${selectedRoom.room_name} (${selectedRoom.floor})`
+      : 'Unknown Room';
     const newDetections: Detection[] = [];
     const seenClasses = new Set<string>();
 
@@ -347,7 +379,7 @@ export function LiveCamera() {
 
     setDetections(newDetections);
     if (isRunning.current) rafRef.current = requestAnimationFrame(runDetection);
-  }, [registeredObjects, speak, logDetection]);
+  }, [registeredObjects, selectedRoom, speak, logDetection]);
 
   // ── Camera controls ───────────────────────────────────────────────────────
   const startCamera = useCallback(async () => {
@@ -454,6 +486,69 @@ export function LiveCamera() {
           ))}
         </div>
       )}
+
+      {/* Room selector */}
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-5 border border-gray-200 dark:border-gray-700 shadow-lg">
+        <div className="flex items-center gap-2 mb-3">
+          <MapPin className="w-4 h-4 text-blue-500" />
+          <h3 className="text-sm font-bold text-gray-900 dark:text-white">
+            Which room is the camera in right now?
+          </h3>
+        </div>
+
+        {rooms.length === 0 ? (
+          <div className="flex items-center gap-3 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl">
+            <AlertTriangle className="w-4 h-4 text-yellow-500 shrink-0" />
+            <p className="text-xs text-yellow-700 dark:text-yellow-300">
+              No rooms set up yet.{' '}
+              <a href="/dashboard/rooms" className="underline font-semibold">Add rooms</a>{' '}
+              to enable accurate location tracking.
+            </p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {rooms.map(room => (
+              <button
+                key={room.id}
+                onClick={() => setSelectedRoom(r => r?.id === room.id ? null : room)}
+                className={`relative rounded-2xl overflow-hidden border-2 transition-all text-left ${
+                  selectedRoom?.id === room.id
+                    ? 'border-blue-500 ring-2 ring-blue-500/30 scale-[1.02]'
+                    : 'border-gray-200 dark:border-gray-600 hover:border-blue-300'
+                }`}
+              >
+                <div className="h-20 bg-gray-100 dark:bg-gray-700 relative">
+                  {room.image_url ? (
+                    <img src={room.image_url} alt={room.room_name} className="w-full h-full object-cover" />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center text-2xl">🏠</div>
+                  )}
+                  {selectedRoom?.id === room.id && (
+                    <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
+                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center">
+                        <CheckCircle2 className="w-4 h-4 text-white" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="px-2.5 py-1.5">
+                  <p className="text-xs font-semibold text-gray-800 dark:text-gray-200 truncate">{room.room_name}</p>
+                  <p className="text-[10px] text-gray-400 truncate">{room.floor}</p>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {selectedRoom && (
+          <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-xl">
+            <MapPin className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <p className="text-xs text-blue-700 dark:text-blue-300">
+              Camera set to: <strong>{selectedRoom.room_name}</strong> — {selectedRoom.floor}
+            </p>
+          </div>
+        )}
+      </div>
 
       {/* Camera card */}
       <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
