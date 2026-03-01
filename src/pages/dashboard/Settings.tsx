@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { User, Mic, Bell, Shield, Save, Fingerprint } from 'lucide-react';
+import { User, Mic, Bell, Shield, Save, Fingerprint, Bluetooth } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { showNotification } from '../../components/NotificationSystem';
 import { useAuth } from '../../contexts/AuthContext';
 import { VoiceLock } from '../../components/VoiceLock';
+import { useNavigate } from 'react-router-dom';
 
 export function Settings() {
   const { user, registerWebAuthn } = useAuth();
+  const navigate = useNavigate();
   const [preferences, setPreferences] = useState({
     voice_assistant_enabled: true,
     camera_detection_enabled: false,
@@ -56,10 +57,8 @@ export function Settings() {
 
     if (error) {
       setMessage('Failed to save settings');
-      showNotification('Save Failed', 'Could not save your settings. Please try again.', 'error');
     } else {
       setMessage('Settings saved successfully');
-      showNotification('Settings Saved', 'Your preferences have been updated.', 'success');
     }
 
     setSaving(false);
@@ -70,10 +69,8 @@ export function Settings() {
     const { error } = await registerWebAuthn();
     if (error) {
       setMessage(`WebAuthn setup failed: ${error.message}`);
-      showNotification('WebAuthn Failed', error.message, 'error');
     } else {
       setMessage('WebAuthn registered successfully');
-      showNotification('WebAuthn Enabled', 'Biometric authentication is now set up.', 'success');
     }
     setTimeout(() => setMessage(''), 3000);
   };
@@ -268,6 +265,35 @@ export function Settings() {
             </select>
           </div>
         </div>
+      </div>
+
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
+        <div className="flex items-center gap-3 mb-6">
+          <Bluetooth className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">
+            Bluetooth & Device Alerts
+          </h2>
+        </div>
+        <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+          Send alerts to paired Bluetooth devices (smartwatches, earbuds) when unusual activity or forgotten phone is detected.
+        </p>
+        <button
+          onClick={() => navigate('/dashboard/bluetooth')}
+          className="w-full flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 rounded-2xl hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors border border-blue-200 dark:border-blue-800"
+        >
+          <div className="flex items-center gap-3">
+            <Bluetooth className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div className="text-left">
+              <p className="text-sm font-medium text-gray-900 dark:text-white">
+                Manage Device Connections
+              </p>
+              <p className="text-xs text-gray-600 dark:text-gray-400">
+                Pair or remove Bluetooth devices and configure per-device alerts
+              </p>
+            </div>
+          </div>
+          <span className="text-blue-600 dark:text-blue-400 text-lg">→</span>
+        </button>
       </div>
 
       <button
