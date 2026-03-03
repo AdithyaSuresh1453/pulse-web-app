@@ -10,25 +10,26 @@ import { useAuth } from '../../contexts/AuthContext';
 import { showNotification } from '../../components/NotificationSystem';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-const MIN_CONFIDENCE    = 0.40; // lowered so more detections appear
-const STABILITY_FRAMES  = 3;   // fewer frames needed before showing box
+const MIN_CONFIDENCE   = 0.40;
+const STABILITY_FRAMES = 3;
 
-// Per-class higher bar only for the most notorious false-positives
+// FIX: raised 'book' threshold to 0.80 — laptops are often misdetected as books
 const CLASS_MIN_CONFIDENCE: Record<string, number> = {
   'toilet': 0.88,
+  'book':   0.80,
 };
 
-// Maps COCO class names → keywords users might register objects as
+// FIX: stronger laptop aliases, removed loose matches from 'book'
 const CLASS_ALIASES: Record<string, string[]> = {
   'cell phone':   ['phone','mobile','smartphone','iphone','android','samsung','pixel','cellphone'],
   'remote':       ['remote','tv remote','remote control','airpods','airpod','earbuds','earbud','earphones','earphone','headphones','wireless earbuds'],
-  'book':         ['book','notebook','diary','journal','textbook'],
+  'book':         ['book','diary','journal','textbook'],
   'backpack':     ['backpack','bag','school bag','rucksack'],
-  'handbag':      ['handbag','purse','bag','clutch','tote','wallet'],
+  'handbag':      ['handbag','purse','clutch','tote','wallet'],
   'suitcase':     ['suitcase','luggage','travel bag'],
   'bottle':       ['bottle','water bottle','flask'],
   'cup':          ['cup','mug','glass','tumbler'],
-  'laptop':       ['laptop','computer','macbook'],
+  'laptop':       ['laptop','computer','macbook','notebook computer','pc','chromebook','surface'],
   'keyboard':     ['keyboard'],
   'mouse':        ['mouse','computer mouse'],
   'scissors':     ['scissors'],
@@ -87,12 +88,25 @@ interface Detection {
   usualLocation?: string;
 }
 
+// FIX: stronger findMatch — exact match first, then partial, then alias
 function findMatch(cocoClass: string, objects: RegisteredObject[]): RegisteredObject | undefined {
   const cl = cocoClass.toLowerCase().trim();
+
+  // 1. Exact name match (highest priority)
+  const exact = objects.find(obj => obj.object_name.toLowerCase().trim() === cl);
+  if (exact) return exact;
+
+  // 2. Name contains class or class contains name
+  const partial = objects.find(obj => {
+    const nl = obj.object_name.toLowerCase().trim();
+    return nl.includes(cl) || cl.includes(nl);
+  });
+  if (partial) return partial;
+
+  // 3. Alias match (lowest priority)
   return objects.find(obj => {
     const nl = obj.object_name.toLowerCase().trim();
-    if (nl.includes(cl) || cl.includes(nl)) return true;
-    return (CLASS_ALIASES[cl] ?? []).some(a => nl.includes(a) || a.includes(nl));
+    return (CLASS_ALIASES[cl] ?? []).some(a => nl === a || nl.includes(a) || a.includes(nl));
   });
 }
 
@@ -111,7 +125,6 @@ function drawDetectionBox(
   label: string,
   subLabel: string,
 ) {
-  // Outline only — no fill
   ctx.save();
   ctx.shadowColor = color;
   ctx.shadowBlur  = 10;
@@ -120,7 +133,6 @@ function drawDetectionBox(
   ctx.strokeRect(x, y, w, h);
   ctx.restore();
 
-  // Corner brackets
   const bs = Math.min(18, w * 0.15, h * 0.15);
   ctx.save();
   ctx.strokeStyle = '#ffffff';
@@ -128,18 +140,13 @@ function drawDetectionBox(
   ctx.shadowColor = color;
   ctx.shadowBlur  = 8;
   ctx.beginPath();
-  // top-left
-  ctx.moveTo(x, y + bs);     ctx.lineTo(x, y);         ctx.lineTo(x + bs, y);
-  // top-right
-  ctx.moveTo(x+w-bs, y);     ctx.lineTo(x+w, y);       ctx.lineTo(x+w, y+bs);
-  // bottom-left
-  ctx.moveTo(x, y+h-bs);     ctx.lineTo(x, y+h);       ctx.lineTo(x+bs, y+h);
-  // bottom-right
-  ctx.moveTo(x+w-bs, y+h);   ctx.lineTo(x+w, y+h);     ctx.lineTo(x+w, y+h-bs);
+  ctx.moveTo(x, y + bs);   ctx.lineTo(x, y);       ctx.lineTo(x + bs, y);
+  ctx.moveTo(x+w-bs, y);   ctx.lineTo(x+w, y);     ctx.lineTo(x+w, y+bs);
+  ctx.moveTo(x, y+h-bs);   ctx.lineTo(x, y+h);     ctx.lineTo(x+bs, y+h);
+  ctx.moveTo(x+w-bs, y+h); ctx.lineTo(x+w, y+h);   ctx.lineTo(x+w, y+h-bs);
   ctx.stroke();
   ctx.restore();
 
-  // Label background pill
   ctx.save();
   ctx.font = 'bold 13px Arial, sans-serif';
   ctx.textBaseline = 'top';
@@ -151,7 +158,6 @@ function drawDetectionBox(
   const boxH = lh * 2 + pad * 2;
   const ly   = y >= boxH + 4 ? y - boxH - 4 : y + h + 2;
 
-  // Background
   ctx.shadowColor = 'rgba(0,0,0,0.8)';
   ctx.shadowBlur  = 6;
   ctx.fillStyle   = color;
@@ -160,7 +166,6 @@ function drawDetectionBox(
   ctx.fill();
   ctx.restore();
 
-  // Label text
   ctx.save();
   ctx.font = 'bold 13px Arial, sans-serif';
   ctx.textBaseline = 'top';
@@ -190,12 +195,12 @@ export function LiveCamera() {
   const [voiceEnabled,  setVoiceEnabled]  = useState(true);
   const [nightMode,     setNightMode]     = useState(false);
   const [brightness,    setBrightness]    = useState(100);
-  const [debugMode,     setDebugMode]     = useState(false); // shows ALL detections
+  const [debugMode,     setDebugMode]     = useState(false);
   const [detections,    setDetections]    = useState<Detection[]>([]);
   const [unusualAlerts, setUnusualAlerts] = useState<string[]>([]);
   const [registeredObjects, setRegisteredObjects] = useState<RegisteredObject[]>([]);
-  const [rooms, setRooms]               = useState<Room[]>([]);
-  const [selectedRoom, setSelectedRoom] = useState<Room | null>(null);
+  const [rooms,         setRooms]         = useState<Room[]>([]);
+  const [selectedRoom,  setSelectedRoom]  = useState<Room | null>(null);
 
   // ── Load model ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -209,7 +214,7 @@ export function LiveCamera() {
       }
     })();
     return () => { cancelled = true; stopCamera(); };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Load registered objects ───────────────────────────────────────────────
   useEffect(() => {
@@ -244,7 +249,6 @@ export function LiveCamera() {
       .then(({ data }) => {
         if (data?.camera_detection_enabled && !isRunning.current) {
           autoStartDoneRef.current = true;
-          // Small delay to ensure video element is mounted
           setTimeout(() => startCamera(), 500);
         }
       });
@@ -316,13 +320,11 @@ export function LiveCamera() {
     const seenClasses = new Set<string>();
 
     for (const pred of preds) {
-      // Basic confidence filter
       if (pred.score < MIN_CONFIDENCE) continue;
       if (pred.score < (CLASS_MIN_CONFIDENCE[pred.class] ?? 0)) continue;
 
       const [bx, by, bw, bh] = pred.bbox;
 
-      // Temporal stability
       seenClasses.add(pred.class);
       frameCountRef.current[pred.class] = (frameCountRef.current[pred.class] ?? 0) + 1;
       if (frameCountRef.current[pred.class] < STABILITY_FRAMES) continue;
@@ -353,16 +355,17 @@ export function LiveCamera() {
         logDetection(matched, pred.score, isUnusual, currentLocation);
       }
 
-      // ── Draw boxes ───────────────────────────────────────────────────────
       const conf = Math.round(pred.score * 100);
 
       if (isRegistered) {
+        // 🟢 Green = registered, normal location | 🔴 Red = registered, unusual location
         const color    = isUnusual ? '#EF4444' : '#10B981';
         const label    = `${displayName.toUpperCase()}  ${conf}%`;
         const subLabel = isUnusual ? `⚠ Should be: ${matched!.usual_location}` : '✓ Normal location';
         drawDetectionBox(ctx, bx, by, bw, bh, color, label, subLabel);
-      } else if (debugModeRef.current) {
-        drawDetectionBox(ctx, bx, by, bw, bh, '#3B82F6', `${pred.class}  ${conf}%`, 'Not registered');
+      } else {
+        // FIX: 🔵 Blue = always shown for unregistered objects (no longer behind debugMode)
+        drawDetectionBox(ctx, bx, by, bw, bh, '#3B82F6', `${pred.class}  ${conf}%`, 'Unregistered object');
       }
 
       newDetections.push({
@@ -372,7 +375,6 @@ export function LiveCamera() {
       });
     }
 
-    // Reset counters for gone classes
     for (const cls of Object.keys(frameCountRef.current)) {
       if (!seenClasses.has(cls)) frameCountRef.current[cls] = 0;
     }
@@ -419,6 +421,7 @@ export function LiveCamera() {
   }, [registeredObjects, runDetection, isActive]);
 
   const registeredDetections = detections.filter(d => d.isRegistered);
+  const unregisteredDetections = detections.filter(d => !d.isRegistered);
   const unusual = registeredDetections.filter(d => d.isUnusual);
 
   return (
@@ -426,7 +429,7 @@ export function LiveCamera() {
       <div>
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Live Camera Detection</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          🟢 Green box = your object, normal location &nbsp;|&nbsp; 🔴 Red box = your object, wrong location
+          🟢 Green = your object, normal &nbsp;|&nbsp; 🔴 Red = your object, wrong location &nbsp;|&nbsp; 🔵 Blue = unregistered object
         </p>
       </div>
 
@@ -458,23 +461,14 @@ export function LiveCamera() {
         </div>
       )}
 
-      {/* Debug mode tip */}
-      {debugMode && isActive && (
-        <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl">
-          <Bug className="w-4 h-4 text-blue-500 shrink-0" />
-          <p className="text-xs text-blue-700 dark:text-blue-300">
-            Debug mode ON — blue boxes show everything COCO detects. If your object shows as blue, its name doesn't match a registered object name. Try renaming your registered object to match what COCO calls it.
-          </p>
-        </div>
-      )}
-
       {/* Stats */}
       {isActive && (
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-4 gap-3">
           {[
-            { label: 'Your Objects',  value: registeredDetections.length, icon: Eye,           c: 'blue'  },
-            { label: 'Normal',        value: registeredDetections.filter(d=>!d.isUnusual).length, icon: CheckCircle2,  c: 'green' },
-            { label: 'Unusual Alert', value: unusual.length,              icon: AlertTriangle, c: 'red'   },
+            { label: 'Your Objects',   value: registeredDetections.length,          icon: Eye,           c: 'blue'   },
+            { label: 'Normal',         value: registeredDetections.filter(d=>!d.isUnusual).length, icon: CheckCircle2, c: 'green'  },
+            { label: 'Unusual Alert',  value: unusual.length,                       icon: AlertTriangle, c: 'red'    },
+            { label: 'Unregistered',   value: unregisteredDetections.length,        icon: Bug,           c: 'gray'   },
           ].map(({ label, value, icon: Icon, c }) => (
             <div key={label} className={`bg-${c}-50 dark:bg-${c}-900/20 border border-${c}-200 dark:border-${c}-800 rounded-2xl p-3 flex items-center gap-3`}>
               <Icon className={`w-5 h-5 text-${c}-500 shrink-0`} />
@@ -571,7 +565,7 @@ export function LiveCamera() {
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm transition-colors ${
                 debugMode ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
               }`}
-              title="Debug mode shows ALL objects COCO detects, even unregistered ones"
+              title="Debug mode shows extra info on blue boxes"
             >
               <Bug className="w-4 h-4" />Debug {debugMode ? 'ON' : 'OFF'}
             </button>
@@ -634,13 +628,13 @@ export function LiveCamera() {
           )}
         </div>
 
-        {/* Legend */}
+        {/* Legend — always shows all 3 colors */}
         {isActive && (
           <div className="flex flex-wrap gap-4 mt-3">
             {[
               { color: 'bg-green-500', label: 'Your object — normal location' },
               { color: 'bg-red-500',   label: 'Your object — unusual location ⚠' },
-              ...(debugMode ? [{ color: 'bg-blue-500', label: 'Detected but not registered (debug)' }] : []),
+              { color: 'bg-blue-500',  label: 'Unregistered object' },
             ].map(({ color, label }) => (
               <span key={label} className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400">
                 <span className={`w-3 h-3 rounded-sm ${color} inline-block`} />{label}
@@ -675,6 +669,24 @@ export function LiveCamera() {
                     <MapPin className="w-3 h-3" />Should be: {d.usualLocation}
                   </p>
                 )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Unregistered detections panel */}
+      {unregisteredDetections.length > 0 && (
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-blue-200 dark:border-blue-800 shadow-lg">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+            <Bug className="w-5 h-5 text-blue-500" />Unregistered Objects ({unregisteredDetections.length})
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {unregisteredDetections.map((d, i) => (
+              <div key={i} className="rounded-2xl p-3 border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
+                <p className="text-sm font-bold capitalize truncate text-blue-800 dark:text-blue-300">{d.cocoClass}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400">{Math.round(d.score * 100)}% confidence</p>
+                <p className="text-xs text-blue-500 mt-1">Not in your registered objects</p>
               </div>
             ))}
           </div>
@@ -729,9 +741,8 @@ export function LiveCamera() {
           🔒 <strong>Privacy:</strong> All detection runs locally in your browser — no video is ever transmitted.
         </p>
         <p className="text-sm text-blue-800 dark:text-blue-400">
-          💡 <strong>Not seeing boxes?</strong> Enable <strong>Debug mode</strong> — it shows everything the AI detects as blue boxes.
-          If your object appears blue, rename it in your registered objects to match exactly what the AI calls it
-          (e.g. "cell phone" not "mobile", "backpack" not "schoolbag").
+          💡 <strong>Blue box showing for your object?</strong> It means the name doesn't match. Rename your registered object
+          to match what the AI calls it (e.g. "laptop" not "MacBook", "cell phone" not "mobile").
         </p>
       </div>
     </div>
