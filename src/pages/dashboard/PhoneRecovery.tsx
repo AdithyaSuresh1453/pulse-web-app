@@ -4,6 +4,7 @@ import { showNotification } from '../../components/NotificationSystem';
 
 export function PhoneRecovery() {
   const [location, setLocation] = useState<{ lat: number; lng: number } | null>(null);
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null);
   const [locationError, setLocationError] = useState('');
   const [isTracking, setIsTracking] = useState(false);
   const [lastSeen, setLastSeen] = useState<Date>(new Date());
@@ -50,10 +51,15 @@ export function PhoneRecovery() {
   };
 
   useEffect(() => {
+    navigator.geolocation.getCurrentPosition((pos) => {
+      setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+    });
+  }, []);
+
+  useEffect(() => {
     fetchLocation();
   }, []);
 
-  // Live tracking with watchPosition
   useEffect(() => {
     if (isTracking) {
       if (navigator.geolocation) {
@@ -82,7 +88,6 @@ export function PhoneRecovery() {
     };
   }, [isTracking]);
 
-  // Simulated bluetooth signal while tracking
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     if (isTracking) {
@@ -117,7 +122,6 @@ export function PhoneRecovery() {
     showNotification('Tracking Stopped', 'Phone location tracking has been stopped.', 'info');
   };
 
-  // Generate a real alert sound using Web Audio API
   const playSound = () => {
     setIsPlaying(true);
     speak('Playing alert sound');
@@ -141,7 +145,6 @@ export function PhoneRecovery() {
       };
 
       const now = ctx.currentTime;
-      // Play 5 ascending beeps
       [880, 1100, 1320, 1540, 1760].forEach((freq, i) => {
         playBeep(now + i * 0.5, freq);
       });
@@ -172,6 +175,12 @@ export function PhoneRecovery() {
     ? `https://www.openstreetmap.org/export/embed.html?bbox=${location.lng - 0.01},${location.lat - 0.01},${location.lng + 0.01},${location.lat + 0.01}&layer=mapnik&marker=${location.lat},${location.lng}`
     : null;
 
+  const directionsUrl = location && userLocation
+    ? `https://www.google.com/maps/dir/${userLocation.lat},${userLocation.lng}/${location.lat},${location.lng}`
+    : location
+    ? `https://www.google.com/maps/dir//${location.lat},${location.lng}`
+    : null;
+
   return (
     <div className="space-y-6">
       <div>
@@ -184,7 +193,6 @@ export function PhoneRecovery() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Map Panel */}
         <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white">Device Location</h2>
@@ -198,7 +206,6 @@ export function PhoneRecovery() {
             </button>
           </div>
 
-          {/* Map */}
           <div className="rounded-2xl h-64 mb-4 overflow-hidden relative bg-gray-100 dark:bg-gray-700">
             {locationError ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4">
@@ -271,7 +278,6 @@ export function PhoneRecovery() {
           </div>
         </div>
 
-        {/* Actions + Bluetooth Panel */}
         <div className="space-y-6">
           <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-6 border border-gray-200 dark:border-gray-700 shadow-lg">
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-4">Actions</h2>
@@ -298,15 +304,15 @@ export function PhoneRecovery() {
                 {isPlaying ? 'Playing Sound...' : 'Play Alert Sound'}
               </button>
 
-              {location && (
+              {directionsUrl && (
                 <a
-                  href={`https://www.google.com/maps?q=${location.lat},${location.lng}`}
+                  href={directionsUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="w-full py-4 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700 text-white rounded-2xl font-medium flex items-center justify-center gap-2 transition-all shadow-lg shadow-purple-500/30"
                 >
-                  <MapPin className="w-5 h-5" />
-                  Open in Google Maps
+                  <Navigation className="w-5 h-5" />
+                  Get Directions
                 </a>
               )}
             </div>
