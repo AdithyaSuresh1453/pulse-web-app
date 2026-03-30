@@ -11,6 +11,7 @@ import HomeRouteMapping from './pages/dashboard/HomeRouteMapping';
 
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { ResetPassword } from './pages/ResetPassword'; // ✅ Add this import
 import { Overview } from './pages/dashboard/Overview';
 import { RegisteredObjects } from './pages/dashboard/RegisteredObjects';
 import { AddObject } from './pages/dashboard/AddObject';
@@ -20,7 +21,7 @@ import { PhoneRecovery } from './pages/dashboard/PhoneRecovery';
 import { Settings } from './pages/dashboard/Settings';
 import { BluetoothDevices } from './pages/dashboard/BluetoothDevices';
 import { Rooms } from './pages/dashboard/Rooms';
-
+import { AuthConfirm } from './pages/AuthConfirm';
 function App() {
   return (
     <BrowserRouter>
@@ -30,7 +31,14 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+<<<<<<< HEAD
               
+=======
+
+              {/* ✅ Reset password — must be outside ProtectedRoute so token isn't lost */}
+              <Route path="/reset-password" element={<ResetPassword />} />
+<Route path="/auth/confirm" element={<AuthConfirm />} />
+>>>>>>> 6a93974bccc678e9879801961c81ecd88fabf876
               <Route
                 path="/dashboard"
                 element={
@@ -130,6 +138,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+<<<<<<< HEAD
               {/* NEW MAP ROUTE */}
               <Route
                 path="/dashboard/map"
@@ -142,6 +151,8 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+=======
+>>>>>>> 6a93974bccc678e9879801961c81ecd88fabf876
               <Route path="/" element={<Navigate to="/dashboard" replace />} />
               <Route path="*" element={<Navigate to="/dashboard" replace />} />
             </Routes>

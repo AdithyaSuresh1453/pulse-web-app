@@ -10,6 +10,13 @@ interface Stats {
   detectionRate: number;
 }
 
+interface ActivityLog {
+  id: string;
+  activity_type: string;
+  location: string;
+  created_at: string;
+}
+
 export function Overview() {
   const { user } = useAuth();
   const [stats, setStats] = useState<Stats>({
@@ -18,7 +25,7 @@ export function Overview() {
     activeAlerts: 0,
     detectionRate: 0,
   });
-  const [recentActivity, setRecentActivity] = useState<unknown[]>([]);
+  const [recentActivity, setRecentActivity] = useState<ActivityLog[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -49,7 +56,7 @@ export function Overview() {
       .order('created_at', { ascending: false })
       .limit(5);
 
-    const activeAlerts = recentLogs?.filter((log: {activity_type: string}) =>
+    const activeAlerts = recentLogs?.filter((log: { activity_type: string }) =>
       log.activity_type === 'unusual_activity' || log.activity_type === 'missing'
     ).length || 0;
 
@@ -60,7 +67,7 @@ export function Overview() {
       detectionRate: objects?.length ? Math.round((recentLogs?.length || 0) / objects.length * 100) : 0,
     });
 
-    setRecentActivity(allLogs || []);
+    setRecentActivity((allLogs as ActivityLog[]) || []);
     setLoading(false);
   };
 
@@ -155,12 +162,7 @@ export function Overview() {
           </div>
         ) : (
           <div className="space-y-3">
-            {recentActivity.map((activity: {
-              id: string;
-              activity_type: string;
-              location: string;
-              created_at: string;
-            }) => (
+            {recentActivity.map((activity) => (
               <div
                 key={activity.id}
                 className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl"

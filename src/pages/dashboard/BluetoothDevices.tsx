@@ -1,379 +1,563 @@
-import { useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
-  Bluetooth,
-  BluetoothConnected,
-  BluetoothOff,
-  Watch,
-  Headphones,
-  MapPin,
-  Cpu,
-  Plus,
-  Trash2,
-  BellOff,
-  Bell,
-  RefreshCw,
-  Zap,
-  AlertTriangle,
-  CheckCircle2,
-  Battery,
-  X,
+  Bluetooth, BluetoothConnected, BluetoothSearching,
+  Bell, Volume2, Vibrate, Smartphone,
+  Watch, Headphones, MapPin, Cpu,
+  Plus, Trash2, Zap, RefreshCw,
+  CheckCircle, XCircle, AlertTriangle, Wifi,
+  ToggleLeft, ToggleRight,
 } from 'lucide-react';
-import { useBluetoothDevices, ConnectedDevice } from '../../hooks/useBluetoothDevices';
 
-function DeviceIcon({ type, className }: { type: ConnectedDevice['type']; className?: string }) {
-  switch (type) {
-    case 'smartwatch': return <Watch className={className} />;
-    case 'earbuds':    return <Headphones className={className} />;
-    case 'tracker':    return <MapPin className={className} />;
-    default:           return <Cpu className={className} />;
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type DeviceStatus = 'connected' | 'disconnected' | 'connecting';
+
+interface PairedDevice {
+  id: string;
+  name: string;
+  type: 'watch' | 'earbuds' | 'tracker' | 'other';
+  status: DeviceStatus;
+  alertsEnabled: boolean;
+  battery?: number;
+  lastSeen: string;
+  isSimulated: boolean;
+}
+
+interface AlertChannel {
+  id: 'vibration' | 'notification' | 'sound';
+  label: string;
+  description: string;
+  icon: React.ElementType;
+  enabled: boolean;
+  supported: boolean;
+  needsPermission: boolean;
+}
+
+// ─── Device type detection ────────────────────────────────────────────────────
+
+function detectDeviceType(name: string): PairedDevice['type'] {
+  const n = name.toLowerCase();
+  if (n.includes('watch') || n.includes('band') || n.includes('fit') || n.includes('gear')) return 'watch';
+  if (n.includes('airpod') || n.includes('bud') || n.includes('ear') || n.includes('headphone') || n.includes('pod')) return 'earbuds';
+  if (n.includes('tile') || n.includes('tag') || n.includes('track')) return 'tracker';
+  return 'other';
+}
+
+const deviceTypeIcons: Record<PairedDevice['type'], React.ElementType> = {
+  watch: Watch,
+  earbuds: Headphones,
+  tracker: MapPin,
+  other: Cpu,
+};
+
+const deviceTypeColors: Record<PairedDevice['type'], string> = {
+  watch: 'text-blue-500',
+  earbuds: 'text-purple-500',
+  tracker: 'text-green-500',
+  other: 'text-orange-500',
+};
+
+const deviceTypeBg: Record<PairedDevice['type'], string> = {
+  watch: 'bg-blue-50 dark:bg-blue-900/20',
+  earbuds: 'bg-purple-50 dark:bg-purple-900/20',
+  tracker: 'bg-green-50 dark:bg-green-900/20',
+  other: 'bg-orange-50 dark:bg-orange-900/20',
+};
+
+// ─── Alert helpers ────────────────────────────────────────────────────────────
+
+function triggerVibration(): boolean {
+  if (!('vibrate' in navigator)) return false;
+  navigator.vibrate([200, 100, 200, 100, 400]);
+  return true;
+}
+
+function triggerSound(): boolean {
+  try {
+    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const ctx = new AudioCtx();
+    [0, 0.3, 0.6].forEach((t) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.value = 880;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0.3, ctx.currentTime + t);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.25);
+      osc.start(ctx.currentTime + t);
+      osc.stop(ctx.currentTime + t + 0.25);
+    });
+    return true;
+  } catch { return false; }
+}
+
+async function triggerNotification(): Promise<boolean> {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    // @ts-ignore
+await reg.showNotification('🚨 PULSE Alert', {
+  body: 'Unusual activity detected near your tracked object.',
+  icon: '/favicon.ico',
+  tag: 'pulse-alert',
+  vibrate: [200, 100, 200],
+} as NotificationOptions & { vibrate: number[] });
+    return true;
+  } catch {
+    new Notification('🚨 PULSE Alert', { body: 'Unusual activity detected.' });
+    return true;
   }
 }
 
-function StatusBadge({ status }: { status: ConnectedDevice['status'] }) {
-  if (status === 'connected') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
-        <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse" />
-        Connected
-      </span>
-    );
-  }
-  if (status === 'pairing') {
-    return (
-      <span className="flex items-center gap-1 text-xs font-medium text-yellow-700 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded-full">
-        <RefreshCw className="w-3 h-3 animate-spin" />
-        Pairing…
-      </span>
-    );
-  }
-  return (
-    <span className="flex items-center gap-1 text-xs font-medium text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full">
-      <span className="w-1.5 h-1.5 bg-gray-400 rounded-full" />
-      Disconnected
-    </span>
-  );
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+function StatusDot({ status }: { status: DeviceStatus }) {
+  const map = {
+    connected: 'bg-emerald-500 shadow-emerald-400/60',
+    disconnected: 'bg-gray-400',
+    connecting: 'bg-amber-400 animate-pulse',
+  };
+  return <span className={`inline-block w-2 h-2 rounded-full shadow ${map[status]}`} />;
 }
 
 function DeviceCard({
   device,
-  onDisconnect,
   onRemove,
   onToggleAlerts,
+  onReconnect,
 }: {
-  device: ConnectedDevice;
-  onDisconnect: (id: string) => void;
+  device: PairedDevice;
   onRemove: (id: string) => void;
   onToggleAlerts: (id: string) => void;
+  onReconnect: (id: string) => void;
 }) {
-  const [confirmRemove, setConfirmRemove] = useState(false);
-
-  const iconColor = device.status === 'connected'
-    ? 'text-blue-600 dark:text-blue-400'
-    : 'text-gray-400 dark:text-gray-500';
-
-  const bgColor = device.status === 'connected'
-    ? 'bg-blue-50 dark:bg-blue-900/20'
-    : 'bg-gray-100 dark:bg-gray-700/40';
+  const Icon = deviceTypeIcons[device.type];
 
   return (
-    <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-5 border border-gray-200 dark:border-gray-700 shadow-md hover:shadow-lg transition-shadow">
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className={`w-12 h-12 rounded-2xl ${bgColor} flex items-center justify-center`}>
-            <DeviceIcon type={device.type} className={`w-6 h-6 ${iconColor}`} />
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900 dark:text-white text-sm leading-tight">
-              {device.name}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 capitalize mt-0.5">
-              {device.type.replace('_', ' ')}
-            </p>
-          </div>
+    <div className={`bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-4 border transition-all ${
+      device.status === 'connected'
+        ? 'border-blue-200 dark:border-blue-700 shadow-md shadow-blue-500/10'
+        : 'border-gray-200 dark:border-gray-700'
+    }`}>
+      <div className="flex items-start gap-3">
+        <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${deviceTypeBg[device.type]} flex items-center justify-center shrink-0`}>
+          <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${deviceTypeColors[device.type]}`} />
         </div>
-        <StatusBadge status={device.status} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-semibold text-gray-900 dark:text-white text-sm truncate">{device.name}</p>
+            <StatusDot status={device.status} />
+            <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+              device.status === 'connected'
+                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                : device.status === 'connecting'
+                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+            }`}>
+              {device.status === 'connecting' ? 'Connecting…' : device.status === 'connected' ? 'Connected' : 'Disconnected'}
+            </span>
+            {device.isSimulated && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-purple-100 text-purple-600 dark:bg-purple-900/30 dark:text-purple-400">
+                App-linked
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 capitalize">{device.type} · Last seen {device.lastSeen}</p>
+          {device.battery !== undefined && (
+            <div className="flex items-center gap-1 mt-1">
+              <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full ${device.battery > 50 ? 'bg-emerald-500' : device.battery > 20 ? 'bg-amber-500' : 'bg-red-500'}`}
+                  style={{ width: `${device.battery}%` }}
+                />
+              </div>
+              <span className="text-[10px] text-gray-400">{device.battery}%</span>
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* Battery indicator */}
-      {device.battery !== undefined && (
-        <div className="flex items-center gap-2 mb-3">
-          <Battery className="w-4 h-4 text-gray-400" />
-          <div className="flex-1 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-            <div
-              className={`h-full rounded-full transition-all ${
-                device.battery > 50 ? 'bg-green-500' :
-                device.battery > 20 ? 'bg-yellow-500' : 'bg-red-500'
-              }`}
-              style={{ width: `${device.battery}%` }}
-            />
-          </div>
-          <span className="text-xs text-gray-500 dark:text-gray-400">{device.battery}%</span>
+      <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={() => onToggleAlerts(device.id)}
+            className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${
+              device.alertsEnabled
+                ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400'
+            }`}
+          >
+            {device.alertsEnabled
+              ? <><ToggleRight className="w-3.5 h-3.5" /> Alerts On</>
+              : <><ToggleLeft className="w-3.5 h-3.5" /> Alerts Off</>}
+          </button>
+          {device.status === 'disconnected' && (
+            <button
+              onClick={() => onReconnect(device.id)}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+            >
+              <BluetoothSearching className="w-3.5 h-3.5" /> Reconnect
+            </button>
+          )}
         </div>
-      )}
-
-      {/* Last seen */}
-      {device.lastSeen && (
-        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
-          Last seen: {new Date(device.lastSeen).toLocaleTimeString()}
-        </p>
-      )}
-
-      {/* Actions */}
-      <div className="flex items-center gap-2">
-        {/* Toggle alerts */}
         <button
-          onClick={() => onToggleAlerts(device.id)}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
-            device.alertsEnabled
-              ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 hover:bg-blue-200 dark:hover:bg-blue-900/50'
-              : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600'
-          }`}
-          title={device.alertsEnabled ? 'Disable alerts for this device' : 'Enable alerts for this device'}
+          onClick={() => onRemove(device.id)}
+          className="p-1.5 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
         >
-          {device.alertsEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
-          {device.alertsEnabled ? 'Alerts On' : 'Alerts Off'}
+          <Trash2 className="w-4 h-4" />
         </button>
-
-        {/* Disconnect */}
-        {device.status === 'connected' && (
-          <button
-            onClick={() => onDisconnect(device.id)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 hover:bg-orange-200 dark:hover:bg-orange-900/50 transition-colors"
-          >
-            <BluetoothOff className="w-3.5 h-3.5" />
-            Disconnect
-          </button>
-        )}
-
-        {/* Remove */}
-        {!confirmRemove ? (
-          <button
-            onClick={() => setConfirmRemove(true)}
-            className="ml-auto p-1.5 rounded-xl text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-            title="Remove device"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        ) : (
-          <div className="ml-auto flex items-center gap-1">
-            <button
-              onClick={() => onRemove(device.id)}
-              className="text-xs px-2 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Remove
-            </button>
-            <button
-              onClick={() => setConfirmRemove(false)}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );
 }
 
+// ─── Main ─────────────────────────────────────────────────────────────────────
+
+const isBTSupported = typeof navigator !== 'undefined' && 'bluetooth' in navigator;
+
 export function BluetoothDevices() {
-  const {
-    devices,
-    isScanning,
-    isSupported,
-    error,
-    scanForDevices,
-    disconnectDevice,
-    removeDevice,
-    toggleAlerts,
-    sendAlert,
-  } = useBluetoothDevices();
+  const [devices, setDevices] = useState<PairedDevice[]>([]);
+  const [isScanning, setIsScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [isTesting, setIsTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState<string | null>(null);
+  const [channels, setChannels] = useState<AlertChannel[]>([]);
+  const [showChannels, setShowChannels] = useState(false);
+  const testTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const [testResult, setTestResult] = useState<string | null>(null);
+  useEffect(() => {
+    initChannels();
+    return () => { if (testTimer.current) clearTimeout(testTimer.current); };
+  }, []);
 
-  const connectedCount = devices.filter(d => d.status === 'connected').length;
-  const alertReadyCount = devices.filter(d => d.status === 'connected' && d.alertsEnabled).length;
-
-  const handleTestAlert = () => {
-    const sent = sendAlert('🔔 Test alert from PULSE — your device is working correctly!');
-    setTestResult(sent
-      ? `Alert sent to ${alertReadyCount} device(s) successfully!`
-      : 'No connected devices with alerts enabled.'
-    );
-    setTimeout(() => setTestResult(null), 4000);
+  const initChannels = async () => {
+    const vibSupported = 'vibrate' in navigator;
+    const notifSupported = 'Notification' in window;
+    const notifGranted = notifSupported && Notification.permission === 'granted';
+    const audioSupported = 'AudioContext' in window || 'webkitAudioContext' in window;
+    setChannels([
+      { id: 'vibration', label: 'Phone Vibration', description: 'Android Chrome only', icon: Vibrate, supported: vibSupported, enabled: vibSupported, needsPermission: false },
+      { id: 'notification', label: 'Push Notification', description: 'All browsers', icon: Bell, supported: notifSupported, enabled: notifGranted, needsPermission: notifSupported && !notifGranted },
+      { id: 'sound', label: 'Alert Sound', description: 'All browsers', icon: Volume2, supported: audioSupported, enabled: audioSupported, needsPermission: false },
+    ]);
   };
 
+  const scanForDevices = async () => {
+    setScanError(null);
+    setIsScanning(true);
+    if (!isBTSupported) {
+      setScanError("Your browser doesn't support Web Bluetooth. Use Chrome on Android or desktop. AirPods/Apple Watch: use Quick Add below.");
+      setIsScanning(false);
+      return;
+    }
+    try {
+      const device = await (navigator as unknown as {
+        bluetooth: { requestDevice: (opts: object) => Promise<{ id: string; name?: string; gatt?: unknown }> };
+      }).bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: ['battery_service', 'heart_rate', 'device_information', 'generic_access'],
+      });
+
+      const name = device.name || 'Unknown Device';
+      const type = detectDeviceType(name);
+
+      let battery: number | undefined;
+      try {
+        const btDevice = device as unknown as {
+          gatt?: { connect: () => Promise<{ getPrimaryService: (s: string) => Promise<{ getCharacteristic: (c: string) => Promise<{ readValue: () => Promise<DataView> }> }> }> };
+        };
+        if (btDevice.gatt) {
+          const server = await btDevice.gatt.connect();
+          const svc = await server.getPrimaryService('battery_service');
+          const char = await svc.getCharacteristic('battery_level');
+          const val = await char.readValue();
+          battery = val.getUint8(0);
+        }
+      } catch { /* battery optional */ }
+
+      const newDevice: PairedDevice = {
+        id: device.id,
+        name,
+        type,
+        status: 'connected',
+        alertsEnabled: true,
+        battery,
+        lastSeen: 'just now',
+        isSimulated: false,
+      };
+
+      setDevices(prev => prev.find(d => d.id === newDevice.id) ? prev : [...prev, newDevice]);
+    } catch (err: unknown) {
+      const msg = (err as Error)?.message || '';
+      if (!msg.includes('cancelled') && !msg.includes('chosen')) {
+        setScanError('Could not connect. Make sure Bluetooth is ON and the device is in pairing mode.');
+      }
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
+  const addManualDevice = (name: string, type: PairedDevice['type']) => {
+    setDevices(prev => [...prev, {
+      id: `manual-${Date.now()}`,
+      name, type,
+      status: 'connected',
+      alertsEnabled: true,
+      lastSeen: 'just now',
+      isSimulated: true,
+    }]);
+  };
+
+  const removeDevice = (id: string) => setDevices(prev => prev.filter(d => d.id !== id));
+  const toggleAlerts = (id: string) => setDevices(prev => prev.map(d => d.id === id ? { ...d, alertsEnabled: !d.alertsEnabled } : d));
+  const reconnect = (id: string) => {
+    setDevices(prev => prev.map(d => d.id === id ? { ...d, status: 'connecting' as DeviceStatus } : d));
+    setTimeout(() => setDevices(prev => prev.map(d => d.id === id ? { ...d, status: 'connected' as DeviceStatus, lastSeen: 'just now' } : d)), 2000);
+  };
+
+  const toggleChannel = async (id: AlertChannel['id']) => {
+    if (id === 'notification') {
+      const ch = channels.find(c => c.id === 'notification');
+      if (ch?.needsPermission) {
+        const result = await Notification.requestPermission();
+        setChannels(prev => prev.map(c => c.id === 'notification' ? { ...c, enabled: result === 'granted', needsPermission: result === 'default' } : c));
+        return;
+      }
+    }
+    setChannels(prev => prev.map(c => c.id === id ? { ...c, enabled: !c.enabled } : c));
+  };
+
+  const handleTest = async () => {
+    setIsTesting(true);
+    setTestMsg(null);
+    const fired: string[] = [];
+    for (const ch of channels) {
+      if (!ch.enabled) continue;
+      if (ch.id === 'vibration' && triggerVibration()) fired.push('vibration');
+      if (ch.id === 'sound' && triggerSound()) fired.push('sound');
+      if (ch.id === 'notification' && await triggerNotification()) fired.push('notification');
+    }
+    setTestMsg(fired.length ? `✓ Fired: ${fired.join(', ')}` : 'No active channels — enable at least one below.');
+    setIsTesting(false);
+    testTimer.current = setTimeout(() => setTestMsg(null), 4000);
+  };
+
+  const connectedCount = devices.filter(d => d.status === 'connected').length;
+  const alertReadyCount = devices.filter(d => d.alertsEnabled && d.status === 'connected').length;
+
+  const presets: { name: string; type: PairedDevice['type']; label: string }[] = [
+    { name: 'AirPods Pro', type: 'earbuds', label: 'AirPods' },
+    { name: 'Apple Watch', type: 'watch', label: 'Apple Watch' },
+    { name: 'Galaxy Watch', type: 'watch', label: 'Galaxy Watch' },
+    { name: 'Galaxy Buds', type: 'earbuds', label: 'Galaxy Buds' },
+    { name: 'Pixel Watch', type: 'watch', label: 'Pixel Watch' },
+    { name: 'Tile Tracker', type: 'tracker', label: 'Tile' },
+  ];
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-          Device Connections
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          Pair Bluetooth devices to receive instant alerts — smartwatches, earbuds, and trackers
-        </p>
-      </div>
+    <div className="w-full space-y-5">
 
-      {/* Support warning */}
-      {!isSupported && (
-        <div className="flex items-start gap-3 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-2xl">
-          <AlertTriangle className="w-5 h-5 text-yellow-600 dark:text-yellow-400 mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-yellow-800 dark:text-yellow-300">
-              Web Bluetooth Not Supported
-            </p>
-            <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-0.5">
-              Your browser doesn't support Web Bluetooth. Please use Chrome or Edge on Android or desktop to pair devices. iOS/Safari is not supported by Web Bluetooth.
-            </p>
-          </div>
+      {/* Header + Scan */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white">Bluetooth Devices</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">Pair devices to receive PULSE alerts</p>
         </div>
-      )}
-
-      {/* Error */}
-      {error && (
-        <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl">
-          <AlertTriangle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
-          <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
-        </div>
-      )}
-
-      {/* Test result */}
-      {testResult && (
-        <div className="flex items-center gap-3 p-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-2xl">
-          <CheckCircle2 className="w-5 h-5 text-green-600 dark:text-green-400 shrink-0" />
-          <p className="text-sm text-green-700 dark:text-green-400">{testResult}</p>
-        </div>
-      )}
-
-      {/* Stats row */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-4 border border-gray-200 dark:border-gray-700 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-900/20 flex items-center justify-center">
-            <BluetoothConnected className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{connectedCount}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Connected</p>
-          </div>
-        </div>
-
-        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-4 border border-gray-200 dark:border-gray-700 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/20 flex items-center justify-center">
-            <Bluetooth className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{devices.length}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Paired Devices</p>
-          </div>
-        </div>
-
-        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-4 border border-gray-200 dark:border-gray-700 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-green-50 dark:bg-green-900/20 flex items-center justify-center">
-            <Bell className="w-5 h-5 text-green-600 dark:text-green-400" />
-          </div>
-          <div>
-            <p className="text-2xl font-bold text-gray-900 dark:text-white">{alertReadyCount}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">Alert Ready</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Action buttons */}
-      <div className="flex flex-wrap gap-3">
         <button
           onClick={scanForDevices}
-          disabled={isScanning || !isSupported}
-          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-2xl font-medium transition-all shadow-lg shadow-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={isScanning}
+          className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white rounded-2xl font-medium transition-all shadow-lg shadow-blue-500/25 disabled:opacity-60 disabled:cursor-not-allowed self-start sm:self-auto whitespace-nowrap"
         >
-          {isScanning ? (
-            <>
-              <RefreshCw className="w-5 h-5 animate-spin" />
-              Scanning…
-            </>
-          ) : (
-            <>
-              <Plus className="w-5 h-5" />
-              Pair New Device
-            </>
-          )}
+          {isScanning
+            ? <><RefreshCw className="w-4 h-4 animate-spin" /> Scanning…</>
+            : <><BluetoothSearching className="w-4 h-4" /> Scan & Pair Device</>}
         </button>
-
-        {alertReadyCount > 0 && (
-          <button
-            onClick={handleTestAlert}
-            className="flex items-center gap-2 px-5 py-3 bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-400 dark:hover:border-blue-500 text-gray-700 dark:text-gray-300 rounded-2xl font-medium transition-all"
-          >
-            <Zap className="w-5 h-5 text-yellow-500" />
-            Test Alert
-          </button>
-        )}
       </div>
 
-      {/* How it works */}
-      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/10 dark:to-indigo-900/10 rounded-3xl p-5 border border-blue-100 dark:border-blue-900/30">
-        <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-3 flex items-center gap-2">
-          <BluetoothConnected className="w-4 h-4" />
-          How Device Alerts Work
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-blue-800 dark:text-blue-300">
-          <div className="flex items-start gap-2">
-            <span className="w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-[10px]">1</span>
-            <p>Pair your Bluetooth device using the button above. Your browser will open the device picker.</p>
+      {/* Stats */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Paired', value: devices.length, icon: Bluetooth, color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+          { label: 'Connected', value: connectedCount, icon: BluetoothConnected, color: 'text-emerald-500', bg: 'bg-emerald-50 dark:bg-emerald-900/20' },
+          { label: 'Alert Ready', value: alertReadyCount, icon: Bell, color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+          { label: 'Channels On', value: channels.filter(c => c.enabled).length, icon: Wifi, color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/20' },
+        ].map(({ label, value, icon: Icon, color, bg }) => (
+          <div key={label} className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-3 sm:p-4 border border-gray-200 dark:border-gray-700 flex items-center gap-3">
+            <div className={`w-9 h-9 sm:w-10 sm:h-10 rounded-xl ${bg} flex items-center justify-center shrink-0`}>
+              <Icon className={`w-4 h-4 sm:w-5 sm:h-5 ${color}`} />
+            </div>
+            <div>
+              <p className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white leading-none">{value}</p>
+              <p className="text-[10px] sm:text-xs text-gray-500 dark:text-gray-400 mt-0.5">{label}</p>
+            </div>
           </div>
-          <div className="flex items-start gap-2">
-            <span className="w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-[10px]">2</span>
-            <p>When PULSE detects an unusual activity or forgotten phone, your connected device will vibrate and you'll receive a notification.</p>
+        ))}
+      </div>
+
+      {/* Scan error */}
+      {scanError && (
+        <div className="bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/40 rounded-2xl p-4 flex gap-3">
+          <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">Scan Notice</p>
+            <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">{scanError}</p>
           </div>
-          <div className="flex items-start gap-2">
-            <span className="w-5 h-5 rounded-full bg-blue-200 dark:bg-blue-800 text-blue-700 dark:text-blue-300 font-bold flex items-center justify-center shrink-0 text-[10px]">3</span>
-            <p>Toggle alerts on/off per device. You can connect multiple devices like a smartwatch AND earbuds simultaneously.</p>
-          </div>
+          <button onClick={() => setScanError(null)} className="text-amber-400 hover:text-amber-600 shrink-0">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
+      {/* Quick Add popular devices */}
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-4 border border-gray-200 dark:border-gray-700">
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Quick Add Popular Devices</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">
+          AirPods &amp; Apple Watch can't connect via browser Bluetooth. Add them here to enable phone-based alerts when they're nearby.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          {presets.map(p => {
+            const Icon = deviceTypeIcons[p.type];
+            const alreadyAdded = devices.some(d => d.name === p.name);
+            return (
+              <button
+                key={p.name}
+                onClick={() => !alreadyAdded && addManualDevice(p.name, p.type)}
+                disabled={alreadyAdded}
+                className={`flex items-center gap-1.5 text-xs font-medium px-3 py-2 rounded-xl border transition-all ${
+                  alreadyAdded
+                    ? 'bg-gray-50 dark:bg-gray-700/50 border-gray-200 dark:border-gray-600 text-gray-400 cursor-not-allowed'
+                    : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:border-blue-400 dark:hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 ${alreadyAdded ? 'text-gray-400' : deviceTypeColors[p.type]}`} />
+                {alreadyAdded ? <CheckCircle className="w-3 h-3 text-emerald-500" /> : <Plus className="w-3 h-3" />}
+                {p.label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* Device list */}
       {devices.length === 0 ? (
-        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-12 border border-gray-200 dark:border-gray-700 text-center">
-          <div className="w-16 h-16 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mx-auto mb-4">
-            <Bluetooth className="w-8 h-8 text-gray-400" />
+        <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-10 border border-dashed border-gray-300 dark:border-gray-600 text-center">
+          <div className="w-14 h-14 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center mx-auto mb-3">
+            <Bluetooth className="w-7 h-7 text-gray-400" />
           </div>
-          <p className="text-gray-600 dark:text-gray-400 font-medium">No devices paired yet</p>
-          <p className="text-sm text-gray-500 dark:text-gray-500 mt-1">
-            Click "Pair New Device" to connect your smartwatch, earbuds, or any Bluetooth device
-          </p>
+          <p className="font-medium text-gray-600 dark:text-gray-400">No devices paired yet</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Scan for a BLE device above, or quick-add AirPods / Apple Watch</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
           {devices.map(device => (
             <DeviceCard
               key={device.id}
               device={device}
-              onDisconnect={disconnectDevice}
               onRemove={removeDevice}
               onToggleAlerts={toggleAlerts}
+              onReconnect={reconnect}
             />
           ))}
         </div>
       )}
 
-      {/* Supported devices info */}
-      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-3xl p-5 border border-gray-200 dark:border-gray-700">
-        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-4">Supported Device Types</h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      {/* Alert Channels collapsible */}
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+        <button
+          onClick={() => setShowChannels(v => !v)}
+          className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+        >
+          <div className="flex items-center gap-2 flex-wrap">
+            <Smartphone className="w-4 h-4 text-blue-500" />
+            <span className="font-semibold text-sm text-gray-900 dark:text-white">Phone Alert Channels</span>
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">
+              {channels.filter(c => c.enabled).length}/{channels.length} active
+            </span>
+          </div>
+          <span className="text-xs text-gray-400 shrink-0 ml-2">{showChannels ? '▲' : '▼'}</span>
+        </button>
+
+        {showChannels && (
+          <div className="px-5 pb-5 space-y-3 border-t border-gray-100 dark:border-gray-700 pt-4">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              These alert your phone directly — works for all devices including those that can't be controlled via browser.
+            </p>
+            {channels.map(ch => {
+              const Icon = ch.icon;
+              return (
+                <div key={ch.id} className={`flex items-center justify-between gap-3 p-3 rounded-xl border ${
+                  ch.enabled ? 'border-blue-200 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10' : 'border-gray-200 dark:border-gray-700'
+                } ${!ch.supported ? 'opacity-50' : ''}`}>
+                  <div className="flex items-center gap-3">
+                    <Icon className={`w-4 h-4 shrink-0 ${ch.enabled ? 'text-blue-500' : 'text-gray-400'}`} />
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-white">{ch.label}</p>
+                      <p className="text-[10px] text-gray-400">{ch.description}</p>
+                    </div>
+                  </div>
+                  {!ch.supported ? (
+                    <span className="text-[10px] text-red-400 font-medium shrink-0">Not supported</span>
+                  ) : ch.needsPermission ? (
+                    <button onClick={() => toggleChannel(ch.id)} className="text-[10px] font-semibold px-2.5 py-1.5 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-lg shrink-0">
+                      Grant
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => toggleChannel(ch.id)}
+                      className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${ch.enabled ? 'bg-blue-600' : 'bg-gray-300 dark:bg-gray-600'}`}
+                    >
+                      <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${ch.enabled ? 'translate-x-5' : ''}`} />
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            <div className="flex items-center gap-3 pt-1 flex-wrap">
+              <button
+                onClick={handleTest}
+                disabled={isTesting || channels.every(c => !c.enabled)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isTesting ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Testing…</> : <><Zap className="w-3.5 h-3.5 text-yellow-300" /> Test Alerts</>}
+              </button>
+              {testMsg && (
+                <span className={`text-xs font-medium px-3 py-2 rounded-xl flex items-center gap-1.5 ${
+                  testMsg.startsWith('✓')
+                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400'
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400'
+                }`}>
+                  {testMsg.startsWith('✓') ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                  {testMsg}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Supported types */}
+      <div className="bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl rounded-2xl p-4 border border-gray-200 dark:border-gray-700">
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">Supported via Web Bluetooth (Chrome)</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
           {[
-            { icon: Watch, label: 'Smartwatches', desc: 'Wear OS, Samsung, Fitbit', color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
-            { icon: Headphones, label: 'Earbuds', desc: 'Any BT headphones', color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
-            { icon: MapPin, label: 'Trackers', desc: 'Tile, SmartTag', color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
-            { icon: Cpu, label: 'Other BT', desc: 'Any BT 4.0+ device', color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/20' },
-          ].map(({ icon: Icon, label, desc, color, bg }) => (
-            <div key={label} className={`${bg} rounded-2xl p-3 flex flex-col items-center text-center gap-1`}>
-              <Icon className={`w-6 h-6 ${color}`} />
+            { icon: Watch, label: 'Galaxy Watch', sub: 'Wear OS, Fitbit', color: 'text-blue-500', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+            { icon: Headphones, label: 'Galaxy Buds', sub: 'Android earbuds', color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/20' },
+            { icon: MapPin, label: 'BLE Trackers', sub: 'Tile, SmartTag', color: 'text-green-500', bg: 'bg-green-50 dark:bg-green-900/20' },
+            { icon: Cpu, label: 'Any BLE 4.0+', sub: 'Custom devices', color: 'text-orange-500', bg: 'bg-orange-50 dark:bg-orange-900/20' },
+          ].map(({ icon: Icon, label, sub, color, bg }) => (
+            <div key={label} className={`${bg} rounded-xl p-3 text-center`}>
+              <Icon className={`w-5 h-5 ${color} mx-auto mb-1`} />
               <p className="text-xs font-semibold text-gray-800 dark:text-gray-200">{label}</p>
-              <p className="text-[10px] text-gray-500 dark:text-gray-400">{desc}</p>
+              <p className="text-[10px] text-gray-500 dark:text-gray-400">{sub}</p>
             </div>
           ))}
         </div>
+        <p className="text-[10px] text-gray-400 dark:text-gray-500 mt-3">
+          ⚠ AirPods &amp; Apple Watch use iOS-only protocols — browser Bluetooth can't control them. Use Quick Add above to link them for phone-based alerts.
+        </p>
       </div>
+
     </div>
   );
 }

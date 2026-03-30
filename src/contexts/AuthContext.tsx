@@ -6,6 +6,7 @@ import { showNotification } from '../components/NotificationSystem';
 interface AuthContextType {
   user: User | null;
   loading: boolean;
+  isRecoverySession: boolean;
   signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
@@ -18,8 +19,9 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser]                    = useState<User | null>(null);
+  const [loading, setLoading]              = useState(true);
+  const [isRecoverySession, setIsRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -27,36 +29,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      (async () => {
-        setUser(session?.user ?? null);
-
-        if (event === 'SIGNED_IN' && session?.user) {
-          const { data: existing } = await supabase
-            .from('user_preferences')
-            .select('id')
-            .eq('user_id', session.user.id)
-            .maybeSingle();
-
-          if (!existing) {
-            await supabase
-              .from('user_preferences')
-              .insert({ user_id: session.user.id });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        (async () => {
+          // ✅ PASSWORD_RECOVERY — do NOT show welcome or redirect
+          if (event === 'PASSWORD_RECOVERY') {
+            setUser(session?.user ?? null);
+            setIsRecovery(true);
+            setLoading(false);
+            return;
           }
 
-          const email = session.user.email ?? 'your account';
-          showNotification(
-            '👋 Welcome back!',
-            `Signed in as ${email}`,
-            'success'
-          );
-        }
+          setUser(session?.user ?? null);
 
-        if (event === 'SIGNED_OUT') {
-          showNotification('Signed out', 'You have been signed out successfully.', 'info');
-        }
-      })();
-    });
+          if (event === 'SIGNED_IN' && session?.user) {
+            const { data: existing } = await supabase
+              .from('user_preferences')
+              .select('id')
+              .eq('user_id', session.user.id)
+              .maybeSingle();
+
+            if (!existing) {
+              await supabase
+                .from('user_preferences')
+                .insert({ user_id: session.user.id });
+            }
+
+            const email = session.user.email ?? 'your account';
+            showNotification('👋 Welcome back!', `Signed in as ${email}`, 'success');
+          }
+
+          if (event === 'SIGNED_OUT') {
+            setIsRecovery(false);
+            showNotification('Signed out', 'You have been signed out successfully.', 'info');
+          }
+        })();
+      }
+    );
 
     return () => subscription.unsubscribe();
   }, []);
@@ -88,42 +97,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!window.PublicKeyCredential) {
         return { error: new Error('WebAuthn not supported') };
       }
-
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return { error: new Error('User not authenticated') };
-      }
+      if (!user) return { error: new Error('User not authenticated') };
 
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
-      const publicKeyCredentialCreationOptions: PublicKeyCredentialCreationOptions = {
-        challenge,
-        rp: {
-          name: 'Pulse',
-          id: window.location.hostname,
-        },
-        user: {
-          id: new TextEncoder().encode(user.id),
-          name: user.email || 'user',
-          displayName: user.email || 'User',
-        },
-        pubKeyCredParams: [
-          { alg: -7, type: 'public-key' },
-          { alg: -257, type: 'public-key' },
-        ],
-        authenticatorSelection: {
-          authenticatorAttachment: 'platform',
-          userVerification: 'required',
-        },
-        timeout: 60000,
-        attestation: 'none',
-      };
-
       await navigator.credentials.create({
-        publicKey: publicKeyCredentialCreationOptions,
+        publicKey: {
+          challenge,
+          rp: { name: 'Pulse', id: window.location.hostname },
+          user: {
+            id: new TextEncoder().encode(user.id),
+            name: user.email || 'user',
+            displayName: user.email || 'User',
+          },
+          pubKeyCredParams: [
+            { alg: -7,   type: 'public-key' },
+            { alg: -257, type: 'public-key' },
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+          },
+          timeout: 60000,
+          attestation: 'none',
+        },
       });
-
       return { error: null };
     } catch (error) {
       return { error: error as Error };
@@ -135,25 +135,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!window.PublicKeyCredential) {
         return { error: new Error('WebAuthn not supported') };
       }
-
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
-      const publicKeyCredentialRequestOptions: PublicKeyCredentialRequestOptions = {
-        challenge,
-        timeout: 60000,
-        userVerification: 'required',
-      };
-
       const credential = await navigator.credentials.get({
-        publicKey: publicKeyCredentialRequestOptions,
+        publicKey: { challenge, timeout: 60000, userVerification: 'required' },
       });
-
-      if (credential) {
-        return { error: null };
-      }
-
-      return { error: new Error('Authentication failed') };
+      return credential ? { error: null } : { error: new Error('Authentication failed') };
     } catch (error) {
       return { error: error as Error };
     }
@@ -162,9 +150,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const registerVoicePassphrase = async (passphrase: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return { error: new Error('User not authenticated') };
-      }
+      if (!user) return { error: new Error('User not authenticated') };
 
       await supabase
         .from('voice_passphrases')
@@ -179,7 +165,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           voice_samples: [],
           is_active: true,
         });
-
       return { error: error ? new Error(error.message) : null };
     } catch (error) {
       return { error: error as Error };
@@ -189,9 +174,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const verifyVoicePassphrase = async (passphrase: string, transcript: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        return { success: false };
-      }
+      if (!user) return { success: false };
 
       const { data } = await supabase
         .from('voice_passphrases')
@@ -200,15 +183,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('is_active', true)
         .maybeSingle();
 
-      if (!data) {
-        return { success: false };
-      }
+      if (!data) return { success: false };
 
-      const normalizedPassphrase = passphrase.toLowerCase().trim();
-      const normalizedTranscript = transcript.toLowerCase().trim();
-
-      const match = normalizedTranscript.includes(normalizedPassphrase) ||
-                    normalizedPassphrase.includes(normalizedTranscript);
+      const np = passphrase.toLowerCase().trim();
+      const nt = transcript.toLowerCase().trim();
+      const match = nt.includes(np) || np.includes(nt);
 
       if (match) {
         await supabase
@@ -217,27 +196,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('user_id', user.id)
           .eq('is_active', true);
       }
-
       return { success: match };
-    } catch (error) {
+    } catch {
       return { success: false };
     }
   };
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        loading,
-        signUp,
-        signIn,
-        signOut,
-        registerWebAuthn,
-        signInWithWebAuthn,
-        registerVoicePassphrase,
-        verifyVoicePassphrase,
-      }}
-    >
+    <AuthContext.Provider value={{
+      user,
+      loading,
+      isRecoverySession,
+      signUp,
+      signIn,
+      signOut,
+      registerWebAuthn,
+      signInWithWebAuthn,
+      registerVoicePassphrase,
+      verifyVoicePassphrase,
+    }}>
       {children}
     </AuthContext.Provider>
   );
@@ -245,8 +222,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
 }

@@ -25,78 +25,67 @@ export function ResetPassword() {
   const [checking,     setChecking]     = useState(true);
 
   useEffect(() => {
-    const trySession = async () => {
-      // Supabase can send tokens in the hash OR as query params depending on config
-      // Check hash first: #access_token=...&type=recovery
-      const hash = window.location.hash;
-      const query = window.location.search;
+    const params     = new URLSearchParams(window.location.search);
+    const token_hash = params.get('token_hash');
+    const type       = params.get('type');
 
-      let accessToken  = '';
-      let refreshToken = '';
-      let type         = '';
-
-      if (hash && hash.length > 1) {
-        const params = new URLSearchParams(hash.substring(1));
-        accessToken  = params.get('access_token')  ?? '';
-        refreshToken = params.get('refresh_token') ?? '';
-        type         = params.get('type')          ?? '';
-      }
-
-      // Fallback: check query string ?access_token=...&type=recovery
-      if (!accessToken && query) {
-        const params = new URLSearchParams(query);
-        accessToken  = params.get('access_token')  ?? '';
-        refreshToken = params.get('refresh_token') ?? '';
-        type         = params.get('type')          ?? '';
-      }
-
-      // Fallback: Supabase PKCE flow sends ?code= instead
-      if (!accessToken && query) {
-        const params  = new URLSearchParams(query);
-        const code    = params.get('code') ?? '';
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (!error) { setValidSession(true); setChecking(false); return; }
-        }
-      }
-
-      if (accessToken && type === 'recovery') {
-        const { error } = await supabase.auth.setSession({
-          access_token:  accessToken,
-          refresh_token: refreshToken,
-        });
+    if (token_hash && type === 'recovery') {
+      supabase.auth.verifyOtp({ token_hash, type: 'recovery' }).then(({ error }) => {
         if (error) {
           setError('This reset link has expired or already been used. Please request a new one.');
+          setValidSession(false);
         } else {
+          setError('');           // ✅ clear any stale error
           setValidSession(true);
         }
-      } else if (accessToken && !type) {
-        // Some Supabase configs omit type — try setting the session anyway
-        const { error } = await supabase.auth.setSession({
-          access_token:  accessToken,
-          refresh_token: refreshToken,
-        });
-        if (!error) { setValidSession(true); setChecking(false); return; }
-        setError('Invalid reset link. Please request a new one.');
-      } else {
-        // Last resort — check if there's already an active session from the link click
-        const { data } = await supabase.auth.getSession();
-        if (data.session) {
+        setChecking(false);       // ✅ always stop spinner after verifyOtp resolves
+      });
+      return;
+    }
+
+    // Fallback: hash-based flow (#access_token=...)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      (event, session) => {
+        if (event === 'PASSWORD_RECOVERY' && session) {
+          setError('');
           setValidSession(true);
-        } else {
-          setError('Invalid reset link. Please request a new one.');
+          setChecking(false);
+        }
+        if (event === 'SIGNED_OUT') {
+          setValidSession(false);
         }
       }
-      setChecking(false);
-    };
+    );
 
-    trySession();
+    // In case PASSWORD_RECOVERY already fired before listener registered
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) {
+        setError('');
+        setValidSession(true);
+        setChecking(false);
+      }
+    });
+
+    // Only mark expired if session was never established
+    const timer = setTimeout(() => {
+      setChecking(prev => {
+        if (prev) {
+          setError('This reset link has expired or already been used. Please request a new one.');
+        }
+        return false;
+      });
+    }, 5000);
+
+    return () => {
+      subscription.unsubscribe();
+      clearTimeout(timer);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
-    if (password !== confirm) { setError('Passwords do not match.'); return; }
+    if (password !== confirm) { setError('Passwords do not match.');                  return; }
 
     setError('');
     setLoading(true);
@@ -125,12 +114,14 @@ export function ResetPassword() {
             <Logo size={50} showText={true} />
           </div>
 
+          {/* ── Checking / verifying ── */}
           {checking ? (
             <div className="text-center py-8">
               <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
               <p className="text-gray-600 dark:text-gray-400">Verifying reset link...</p>
             </div>
 
+          /* ── Success ── */
           ) : done ? (
             <div className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
@@ -141,6 +132,7 @@ export function ResetPassword() {
               <p className="text-sm text-gray-500 dark:text-gray-400">Redirecting to sign in...</p>
             </div>
 
+          /* ── Invalid / expired link ── */
           ) : !validSession ? (
             <div className="text-center space-y-4">
               <div className="w-16 h-16 mx-auto bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
@@ -148,26 +140,37 @@ export function ResetPassword() {
               </div>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Link Expired</h2>
               <p className="text-sm text-gray-600 dark:text-gray-400">{error}</p>
-              <button onClick={() => navigate('/login')}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all">
+              <button
+                onClick={() => navigate('/login')}
+                className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all"
+              >
                 Back to Sign In
               </button>
             </div>
 
+          /* ── Reset form ── */
           ) : (
             <>
-              <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white mb-2">Set New Password</h1>
-              <p className="text-center text-gray-600 dark:text-gray-400 mb-8 text-sm">Choose a strong password for your account</p>
+              <h1 className="text-2xl font-bold text-center text-gray-900 dark:text-white mb-2">
+                Set New Password
+              </h1>
+              <p className="text-center text-gray-600 dark:text-gray-400 mb-8 text-sm">
+                Choose a strong password for your account
+              </p>
 
-              {error && (
+              {/* Only show error banner inside form for submit errors */}
+              {error && validSession && (
                 <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl">
                   <p className="text-sm text-red-700 dark:text-red-400">{error}</p>
                 </div>
               )}
 
               <form onSubmit={handleSubmit} className="space-y-4">
+                {/* New Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">New Password</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    New Password
+                  </label>
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
@@ -177,11 +180,16 @@ export function ResetPassword() {
                       className="w-full pl-12 pr-12 py-3 bg-white dark:bg-gray-700 border-2 border-gray-200 dark:border-gray-600 rounded-2xl focus:border-blue-500 dark:focus:border-blue-400 focus:outline-none transition-colors text-gray-900 dark:text-white"
                       placeholder="••••••••"
                     />
-                    <button type="button" onClick={() => setShowPw(!showPw)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                    <button
+                      type="button"
+                      onClick={() => setShowPw(!showPw)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
                       {showPw ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                     </button>
                   </div>
+
+                  {/* Password strength checklist */}
                   {password.length > 0 && (
                     <div className="mt-2 space-y-1">
                       {checks.map(c => (
@@ -189,15 +197,20 @@ export function ResetPassword() {
                           {c.pass
                             ? <CheckCircle className="w-3.5 h-3.5 text-green-500" />
                             : <XCircle    className="w-3.5 h-3.5 text-gray-300 dark:text-gray-600" />}
-                          <span className={`text-xs ${c.pass ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>{c.label}</span>
+                          <span className={`text-xs ${c.pass ? 'text-green-600 dark:text-green-400' : 'text-gray-400'}`}>
+                            {c.label}
+                          </span>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
 
+                {/* Confirm Password */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Confirm Password</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Confirm Password
+                  </label>
                   <div className="relative">
                     <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
                     <input
