@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Logo } from '../components/Logo';
+import  Logo  from '../components/Logo';
 
 export function AuthConfirm() {
   const [params] = useSearchParams();
