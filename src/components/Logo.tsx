@@ -1,4 +1,4 @@
-interface LogoProps {
+/*interface LogoProps {
   size?: number;
   showText?: boolean;
   className?: string;
@@ -138,4 +138,58 @@ export function Logo({ size = 40, showText = true, className = '' }: LogoProps) 
       )}
     </div>
   );
+}*/
+
+/*import logoImg from "@/assets/neardear-logo.png";
+
+interface LogoProps {
+  size?: "sm" | "md" | "lg";
+  showText?: boolean;
 }
+
+const sizes = { sm: "h-8 w-8", md: "h-10 w-10", lg: "h-14 w-14" };
+
+const Logo = ({ size = "md", showText = true }: LogoProps) => (
+  <div className="flex items-center gap-2.5">
+    <img src={logoImg} alt="NearDear logo" className={`${sizes[size]} object-contain`} />
+    {showText && (
+      <div className="flex flex-col leading-none">
+        <span className="font-heading text-lg font-bold tracking-tight text-foreground">
+          Near<span className="text-gradient-primary">Dear</span>
+        </span>
+        <span className="text-[10px] font-body text-muted-foreground tracking-widest uppercase">
+          Always close to you
+        </span>
+      </div>
+    )}
+  </div>
+);
+
+export default Logo;*/
+
+import { Home } from 'lucide-react';
+
+interface LogoProps {
+  size?: number;
+  showText?: boolean;
+}
+
+const Logo = ({ size = 40, showText = true }: LogoProps) => {
+  return (
+    <div className="flex items-center gap-3">
+      <div 
+        className="flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30"
+        style={{ width: size, height: size }}
+      >
+        <Home style={{ width: size * 0.6, height: size * 0.6 }} />
+      </div>
+      {showText && (
+        <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-400">
+          Pulse
+        </span>
+      )}
+    </div>
+  );
+};
+
+export default Logo;
