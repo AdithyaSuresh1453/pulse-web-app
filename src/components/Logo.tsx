@@ -129,7 +129,7 @@ export function Logo({ size = 40, showText = true, className = '' }: LogoProps) 
       {showText && (
         <div className="flex flex-col">
           <span className="text-xl font-bold bg-gradient-to-r from-green-600 to-blue-600 dark:from-green-400 dark:to-blue-400 bg-clip-text text-transparent">
-            Pulse
+            Near Dear
           </span>
           <span className="text-xs text-gray-600 dark:text-gray-400 -mt-1">
             Keep a Beat on Your Belongings

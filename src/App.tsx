@@ -16,7 +16,7 @@ import { LiveCamera } from './pages/dashboard/LiveCamera';
 import { AlertsHistory } from './pages/dashboard/AlertsHistory';
 import { PhoneRecovery } from './pages/dashboard/PhoneRecovery';
 import { Settings } from './pages/dashboard/Settings';
-import { BluetoothDevices } from './pages/dashboard/BluetoothDevices';
+import BluetoothDevices from './pages/dashboard/BluetoothDevices';
 import { Rooms } from './pages/dashboard/Rooms';
 import { AuthConfirm } from './pages/AuthConfirm';
 function App() {
