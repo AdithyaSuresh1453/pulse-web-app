@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { Logo } from '../components/Logo';
+import   Logo  from '../components/Logo';
 import { showNotification } from '../components/NotificationSystem';
 
 function checkPassword(pw: string) {

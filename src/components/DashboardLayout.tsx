@@ -15,10 +15,11 @@ import {
   Moon,
   Bluetooth,
   Home,
+  MapPin, 
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import { Logo } from './Logo';
+import Logo from './Logo'; // CORRECTED: Removed curly braces for default import
 import { NotificationBell } from './NotificationSystem';
 
 interface DashboardLayoutProps {
@@ -30,6 +31,7 @@ const navItems = [
   { icon: Package,         label: 'Registered Objects',  path: '/dashboard/objects' },
   { icon: Plus,            label: 'Add Object',          path: '/dashboard/add-object' },
   { icon: Home,            label: 'Rooms',               path: '/dashboard/rooms' },
+  { icon: MapPin,          label: 'Home Map',            path: '/dashboard/map' }, 
   { icon: Camera,          label: 'Live Camera',         path: '/dashboard/camera' },
   { icon: Bell,            label: 'Alerts & History',    path: '/dashboard/alerts' },
   { icon: Smartphone,      label: 'Phone Recovery',      path: '/dashboard/phone-recovery' },

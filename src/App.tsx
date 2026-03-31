@@ -6,9 +6,11 @@ import { DashboardLayout } from './components/DashboardLayout';
 import { VoiceAssistant } from './components/VoiceAssistant';
 import { NotificationSystem } from './components/NotificationSystem';
 
+// Corrected Import
+import HomeRouteMapping from './pages/dashboard/HomeRouteMapping';
+
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
-import { ResetPassword } from './pages/ResetPassword'; // ✅ Add this import
 import { Overview } from './pages/dashboard/Overview';
 import { RegisteredObjects } from './pages/dashboard/RegisteredObjects';
 import { AddObject } from './pages/dashboard/AddObject';
@@ -18,7 +20,7 @@ import { PhoneRecovery } from './pages/dashboard/PhoneRecovery';
 import { Settings } from './pages/dashboard/Settings';
 import BluetoothDevices from './pages/dashboard/BluetoothDevices';
 import { Rooms } from './pages/dashboard/Rooms';
-import { AuthConfirm } from './pages/AuthConfirm';
+
 function App() {
   return (
     <BrowserRouter>
@@ -28,10 +30,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
-
-              {/* ✅ Reset password — must be outside ProtectedRoute so token isn't lost */}
-              <Route path="/reset-password" element={<ResetPassword />} />
-<Route path="/auth/confirm" element={<AuthConfirm />} />
+              
               <Route
                 path="/dashboard"
                 element={
@@ -126,6 +125,18 @@ function App() {
                   <ProtectedRoute>
                     <DashboardLayout>
                       <Rooms />
+                    </DashboardLayout>
+                    <VoiceAssistant />
+                  </ProtectedRoute>
+                }
+              />
+              {/* NEW MAP ROUTE */}
+              <Route
+                path="/dashboard/map"
+                element={
+                  <ProtectedRoute>
+                    <DashboardLayout>
+                      <HomeRouteMapping />
                     </DashboardLayout>
                     <VoiceAssistant />
                   </ProtectedRoute>

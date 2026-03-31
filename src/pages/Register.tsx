@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Fingerprint, Mic, Eye, EyeOff, CheckCircle, XCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Logo } from '../components/Logo';
+import  Logo  from '../components/Logo';
 import { VoiceLock } from '../components/VoiceLock';
 
 // ── Validation helpers ────────────────────────────────────────────────────────

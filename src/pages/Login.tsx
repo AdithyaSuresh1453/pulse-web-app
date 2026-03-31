@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Fingerprint, Mic, Eye, EyeOff, KeyRound, ArrowLeft, CheckCircle } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
-import { Logo } from '../components/Logo';
+import  Logo  from '../components/Logo';
 import { VoiceLock } from '../components/VoiceLock';
 import { supabase } from '../lib/supabase';
 import { showNotification } from '../components/NotificationSystem';
