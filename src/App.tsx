@@ -11,6 +11,8 @@ import HomeRouteMapping from './pages/dashboard/HomeRouteMapping';
 
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
+import { AuthConfirm } from './pages/AuthConfirm';
+import { ResetPassword } from './pages/ResetPassword';
 import { Overview } from './pages/dashboard/Overview';
 import { RegisteredObjects } from './pages/dashboard/RegisteredObjects';
 import { AddObject } from './pages/dashboard/AddObject';
@@ -30,6 +32,8 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/register" element={<Register />} />
+              <Route path="/auth/confirm" element={<AuthConfirm />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
               
               <Route
                 path="/dashboard"
@@ -130,7 +134,6 @@ function App() {
                   </ProtectedRoute>
                 }
               />
-              {/* NEW MAP ROUTE */}
               <Route
                 path="/dashboard/map"
                 element={

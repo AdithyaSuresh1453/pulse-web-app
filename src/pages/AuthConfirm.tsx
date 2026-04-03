@@ -2,30 +2,49 @@ import { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { CheckCircle, XCircle } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import  Logo  from '../components/Logo';
+import Logo from '../components/Logo';
 
 export function AuthConfirm() {
-  const [params] = useSearchParams();
+  const [params]  = useSearchParams();
   const navigate  = useNavigate();
-  const [status, setStatus] = useState<'checking' | 'success' | 'error'>('checking');
+  const [status,  setStatus] = useState<'checking' | 'success' | 'error'>('checking');
+  const [errMsg,  setErrMsg] = useState('');
 
   useEffect(() => {
     const token_hash = params.get('token_hash');
     const type       = params.get('type') as 'signup' | 'email' | 'recovery' | null;
 
     if (!token_hash || !type) {
+      setErrMsg('Invalid confirmation link.');
       setStatus('error');
       return;
     }
 
-    supabase.auth.verifyOtp({ token_hash, type }).then(({ error }) => {
-      if (error) {
-        setStatus('error');
-      } else {
+    const verify = async () => {
+      // Step 1 — try verifyOtp directly
+      const { error } = await supabase.auth.verifyOtp({ token_hash, type });
+
+      if (!error) {
         setStatus('success');
         setTimeout(() => navigate('/dashboard'), 2500);
+        return;
       }
-    });
+
+      // Step 2 — if verifyOtp failed, check if session already exists
+      // This happens when PKCE already consumed the token on redirect
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setStatus('success');
+        setTimeout(() => navigate('/dashboard'), 2500);
+        return;
+      }
+
+      // Step 3 — truly expired or invalid
+      setErrMsg('This confirmation link has expired or already been used. Please sign up again.');
+      setStatus('error');
+    };
+
+    verify();
   }, []);
 
   return (
@@ -64,15 +83,21 @@ export function AuthConfirm() {
                 <XCircle className="w-8 h-8 text-red-600 dark:text-red-400" />
               </div>
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Link Expired</h2>
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                This confirmation link has expired or already been used.
-              </p>
-              <button
-                onClick={() => navigate('/login')}
-                className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all"
-              >
-                Back to Sign In
-              </button>
+              <p className="text-sm text-gray-600 dark:text-gray-400">{errMsg}</p>
+              <div className="space-y-2">
+                <button
+                  onClick={() => navigate('/register')}
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white font-semibold rounded-2xl hover:from-blue-700 hover:to-blue-800 transition-all"
+                >
+                  Sign Up Again
+                </button>
+                <button
+                  onClick={() => navigate('/login')}
+                  className="w-full py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 font-semibold rounded-2xl hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
+                >
+                  Back to Sign In
+                </button>
+              </div>
             </div>
           )}
 

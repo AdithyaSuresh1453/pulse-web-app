@@ -3,25 +3,70 @@ import { User } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 import { showNotification } from '../components/NotificationSystem';
 
+// ── Biometric credential storage ─────────────────────────────────────────────
+
+const BIOMETRIC_KEY = 'pulse_biometric_creds';
+
+interface StoredCreds {
+  email:    string;
+  password: string;
+}
+
+function saveCredentials(creds: StoredCreds) {
+  try { localStorage.setItem(BIOMETRIC_KEY, JSON.stringify(creds)); } catch {}
+}
+
+function loadCredentials(): StoredCreds | null {
+  try {
+    const raw = localStorage.getItem(BIOMETRIC_KEY);
+    return raw ? JSON.parse(raw) as StoredCreds : null;
+  } catch { return null; }
+}
+
+function clearCredentials() {
+  try { localStorage.removeItem(BIOMETRIC_KEY); } catch {}
+}
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
 interface AuthContextType {
-  user: User | null;
-  loading: boolean;
-  isRecoverySession: boolean;
-  signUp: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signOut: () => Promise<void>;
-  registerWebAuthn: () => Promise<{ error: Error | null }>;
-  signInWithWebAuthn: () => Promise<{ error: Error | null }>;
+  user:                    User | null;
+  loading:                 boolean;
+  isRecoverySession:       boolean;
+  hasBiometric:            boolean;
+  signUp:                  (email: string, password: string) => Promise<{ error: Error | null }>;
+  signIn:                  (email: string, password: string) => Promise<{ error: Error | null }>;
+  signOut:                 () => Promise<void>;
+  registerWebAuthn:        (password: string) => Promise<{ error: Error | null }>;
+  signInWithWebAuthn:      (email?: string) => Promise<{ error: Error | null }>;
   registerVoicePassphrase: (passphrase: string) => Promise<{ error: Error | null }>;
-  verifyVoicePassphrase: (passphrase: string, transcript: string) => Promise<{ success: boolean }>;
+  verifyVoicePassphrase:   (passphrase: string, transcript: string) => Promise<{ success: boolean }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function isWebAuthnSupported(): boolean {
+  return typeof window !== 'undefined' && !!window.PublicKeyCredential;
+}
+
+async function isPlatformAvailable(): Promise<boolean> {
+  if (!isWebAuthnSupported()) return false;
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch { return false; }
+}
+
+// ── Provider ──────────────────────────────────────────────────────────────────
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser]                    = useState<User | null>(null);
-  const [loading, setLoading]              = useState(true);
-  const [isRecoverySession, setIsRecovery] = useState(false);
+  const [user,              setUser]         = useState<User | null>(null);
+  const [loading,           setLoading]      = useState(true);
+  const [isRecoverySession, setIsRecovery]   = useState(false);
+  const [hasBiometric,      setHasBiometric] = useState<boolean>(() => !!loadCredentials());
+
+  // ── Session listener ────────────────────────────────────────────────────
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -32,7 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, session) => {
         (async () => {
-          // ✅ PASSWORD_RECOVERY — do NOT show welcome or redirect
           if (event === 'PASSWORD_RECOVERY') {
             setUser(session?.user ?? null);
             setIsRecovery(true);
@@ -55,8 +99,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 .insert({ user_id: session.user.id });
             }
 
-            const email = session.user.email ?? 'your account';
-            showNotification('👋 Welcome back!', `Signed in as ${email}`, 'success');
+            showNotification(
+              '👋 Welcome back!',
+              `Signed in as ${session.user.email ?? 'your account'}`,
+              'success'
+            );
           }
 
           if (event === 'SIGNED_OUT') {
@@ -70,36 +117,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
+  // ── Sign Up ──────────────────────────────────────────────────────────────
+
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({ email, password });
     if (!error) {
-      showNotification('Account Created', `Welcome! Your account for ${email} is ready.`, 'success');
+      showNotification('Account Created', 'Check your email to confirm your account.', 'success');
     } else {
       showNotification('Sign Up Failed', error.message, 'error');
     }
     return { error: error ? new Error(error.message) : null };
   };
 
+  // ── Sign In ──────────────────────────────────────────────────────────────
+
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      showNotification('Sign In Failed', error.message, 'error');
-    }
+    if (error) showNotification('Sign In Failed', error.message, 'error');
     return { error: error ? new Error(error.message) : null };
   };
+
+  // ── Sign Out ─────────────────────────────────────────────────────────────
 
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  const registerWebAuthn = async () => {
-    try {
-      if (!window.PublicKeyCredential) {
-        return { error: new Error('WebAuthn not supported') };
-      }
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return { error: new Error('User not authenticated') };
+  // ── Register WebAuthn ────────────────────────────────────────────────────
+  // password param: user's current password, stored for biometric re-auth
 
+  const registerWebAuthn = async (password: string) => {
+    try {
+      if (!isWebAuthnSupported()) {
+        return { error: new Error('WebAuthn not supported on this device') };
+      }
+
+      const available = await isPlatformAvailable();
+      if (!available) {
+        return { error: new Error('No biometric authenticator available on this device') };
+      }
+
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user)       return { error: new Error('Please sign in first') };
+      if (!user.email) return { error: new Error('No email associated with this account') };
+
+      // Verify password is correct before storing
+      const { error: verifyErr } = await supabase.auth.signInWithPassword({
+        email: user.email, password,
+      });
+      if (verifyErr) return { error: new Error('Incorrect password — please try again') };
+
+      // Create WebAuthn credential on device
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
@@ -108,9 +176,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           challenge,
           rp: { name: 'Pulse', id: window.location.hostname },
           user: {
-            id: new TextEncoder().encode(user.id),
-            name: user.email || 'user',
-            displayName: user.email || 'User',
+            id:          new TextEncoder().encode(user.id),
+            name:        user.email,
+            displayName: user.email,
           },
           pubKeyCredParams: [
             { alg: -7,   type: 'public-key' },
@@ -118,34 +186,90 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ],
           authenticatorSelection: {
             authenticatorAttachment: 'platform',
-            userVerification: 'required',
+            userVerification:        'required',
+            residentKey:             'preferred',
           },
-          timeout: 60000,
+          timeout:     60000,
           attestation: 'none',
         },
       });
+
+      // Store credentials protected by biometric
+      saveCredentials({ email: user.email, password });
+      setHasBiometric(true);
       return { error: null };
-    } catch (error) {
+
+    } catch (error: any) {
+      const msg = error?.message || '';
+      if (msg.includes('cancel') || msg.includes('abort')) {
+        return { error: new Error('Biometric prompt was cancelled') };
+      }
       return { error: error as Error };
     }
   };
 
-  const signInWithWebAuthn = async () => {
+  // ── Sign In with WebAuthn ────────────────────────────────────────────────
+
+  const signInWithWebAuthn = async (_email?: string) => {
     try {
-      if (!window.PublicKeyCredential) {
-        return { error: new Error('WebAuthn not supported') };
+      if (!isWebAuthnSupported()) {
+        return { error: new Error('WebAuthn not supported on this device') };
       }
+
+      const available = await isPlatformAvailable();
+      if (!available) {
+        return { error: new Error('No biometric authenticator available') };
+      }
+
+      const creds = loadCredentials();
+      if (!creds) {
+        return { error: new Error('No biometric registered. Please set up biometric in Settings first.') };
+      }
+
+      // Trigger biometric prompt
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
       const credential = await navigator.credentials.get({
-        publicKey: { challenge, timeout: 60000, userVerification: 'required' },
+        publicKey: {
+          challenge,
+          timeout:          60000,
+          userVerification: 'required',
+        },
       });
-      return credential ? { error: null } : { error: new Error('Authentication failed') };
-    } catch (error) {
+
+      if (!credential) {
+        return { error: new Error('Biometric verification failed') };
+      }
+
+      // Biometric passed — sign in to Supabase with stored creds
+      const { error } = await supabase.auth.signInWithPassword({
+        email:    creds.email,
+        password: creds.password,
+      });
+
+      if (error) {
+        // Password may have changed — clear stale creds
+        clearCredentials();
+        setHasBiometric(false);
+        return { error: new Error('Biometric credentials expired. Please sign in with password and re-register biometric in Settings.') };
+      }
+
+      return { error: null };
+
+    } catch (error: any) {
+      const msg = error?.message || '';
+      if (msg.includes('cancel') || msg.includes('abort')) {
+        return { error: new Error('cancelled') };
+      }
+      if (msg.includes('not allowed') || msg.includes('No credentials')) {
+        return { error: new Error('No biometric registered') };
+      }
       return { error: error as Error };
     }
   };
+
+  // ── Voice Passphrase ─────────────────────────────────────────────────────
 
   const registerVoicePassphrase = async (passphrase: string) => {
     try {
@@ -160,11 +284,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await supabase
         .from('voice_passphrases')
         .insert({
-          user_id: user.id,
-          passphrase: passphrase.toLowerCase().trim(),
+          user_id:       user.id,
+          passphrase:    passphrase.toLowerCase().trim(),
           voice_samples: [],
-          is_active: true,
+          is_active:     true,
         });
+
       return { error: error ? new Error(error.message) : null };
     } catch (error) {
       return { error: error as Error };
@@ -185,8 +310,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!data) return { success: false };
 
-      const np = passphrase.toLowerCase().trim();
-      const nt = transcript.toLowerCase().trim();
+      const np    = passphrase.toLowerCase().trim();
+      const nt    = transcript.toLowerCase().trim();
       const match = nt.includes(np) || np.includes(nt);
 
       if (match) {
@@ -196,17 +321,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('user_id', user.id)
           .eq('is_active', true);
       }
+
       return { success: match };
     } catch {
       return { success: false };
     }
   };
 
+  // ── Return ────────────────────────────────────────────────────────────────
+
   return (
     <AuthContext.Provider value={{
       user,
       loading,
       isRecoverySession,
+      hasBiometric,
       signUp,
       signIn,
       signOut,

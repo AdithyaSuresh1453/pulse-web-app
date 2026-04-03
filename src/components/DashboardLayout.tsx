@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
-import Logo from './Logo'; // CORRECTED: Removed curly braces for default import
+import Logo from './Logo';
 import { NotificationBell } from './NotificationSystem';
 
 interface DashboardLayoutProps {
@@ -95,16 +95,19 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
         </div>
       </div>
 
+      {/* ── Sidebar ── */}
       <aside
-        className={`fixed top-0 left-0 h-full w-72 bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl border-r border-gray-200 dark:border-gray-700 p-6 transition-transform duration-300 z-40 ${
+        className={`fixed top-0 left-0 h-full w-72 bg-white/70 dark:bg-gray-800/70 backdrop-blur-xl border-r border-gray-200 dark:border-gray-700 p-6 transition-transform duration-300 z-40 flex flex-col ${
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         } lg:translate-x-0`}
       >
-        <div className="hidden lg:block mb-8">
+        {/* Logo — desktop only */}
+        <div className="hidden lg:block mb-8 flex-shrink-0">
           <Logo size={40} showText={true} />
         </div>
 
-        <nav className="space-y-2 mt-20 lg:mt-0">
+        {/* Nav — takes remaining space, scrollable if needed */}
+        <nav className="flex-1 overflow-y-auto space-y-2 mt-20 lg:mt-0 pb-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = location.pathname === item.path;
@@ -127,7 +130,8 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
           })}
         </nav>
 
-        <div className="absolute bottom-6 left-6 right-6 space-y-3">
+        {/* ── Bottom section — pinned, never overlaps nav ── */}
+        <div className="flex-shrink-0 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-2">
           <button
             onClick={handleSignOut}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"

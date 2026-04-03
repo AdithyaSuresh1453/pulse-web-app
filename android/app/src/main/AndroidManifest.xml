@@ -1,19 +1,31 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.pulse.app">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!-- INTERNET -->
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- CAMERA -->
+    <uses-permission android:name="android.permission.CAMERA" />
+
+    <!-- FOREGROUND SERVICE -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+
+    <!-- NOTIFICATIONS (Android 13+) -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- BLUETOOTH (Android 12+) -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
 
-    <!-- LOCATION (required for scanning) -->
+    <!-- LOCATION (Required for BLE scan) -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
 
-    <!-- Older Android support -->
+    <!-- BOOT -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+    <!-- Older Android compatibility -->
     <uses-permission android:name="android.permission.BLUETOOTH"
         android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN"
@@ -27,6 +39,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 
+        <!-- ✅ MAIN ACTIVITY -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -40,5 +53,13 @@
 
         </activity>
 
+        <!-- ✅ CAMERA FOREGROUND SERVICE -->
+        <service
+            android:name=".detection.CameraDetectionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="camera" />
+
     </application>
+
 </manifest>
