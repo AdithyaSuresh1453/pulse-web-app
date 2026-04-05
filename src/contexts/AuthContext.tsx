@@ -1,9 +1,10 @@
+// src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
+import { User, Session } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';           // adjust if your path differs
 import { showNotification } from '../components/NotificationSystem';
 
-// ── Biometric credential storage ─────────────────────────────────────────────
+// ── Biometric credential storage ──────────────────────────────────────────────
 
 const BIOMETRIC_KEY = 'pulse_biometric_creds';
 
@@ -31,6 +32,7 @@ function clearCredentials() {
 
 interface AuthContextType {
   user:                    User | null;
+  session:                 Session | null;          // ← added
   loading:                 boolean;
   isRecoverySession:       boolean;
   hasBiometric:            boolean;
@@ -62,14 +64,16 @@ async function isPlatformAvailable(): Promise<boolean> {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user,              setUser]         = useState<User | null>(null);
+  const [session,           setSession]      = useState<Session | null>(null); // ← added
   const [loading,           setLoading]      = useState(true);
   const [isRecoverySession, setIsRecovery]   = useState(false);
   const [hasBiometric,      setHasBiometric] = useState<boolean>(() => !!loadCredentials());
 
-  // ── Session listener ────────────────────────────────────────────────────
+  // ── Session listener ─────────────────────────────────────────────────────
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
@@ -78,12 +82,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (event, session) => {
         (async () => {
           if (event === 'PASSWORD_RECOVERY') {
+            setSession(session);
             setUser(session?.user ?? null);
             setIsRecovery(true);
             setLoading(false);
             return;
           }
 
+          setSession(session);
           setUser(session?.user ?? null);
 
           if (event === 'SIGNED_IN' && session?.user) {
@@ -117,7 +123,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Sign Up ──────────────────────────────────────────────────────────────
+  // ── Sign Up ───────────────────────────────────────────────────────────────
 
   const signUp = async (email: string, password: string) => {
     const { error } = await supabase.auth.signUp({ email, password });
@@ -129,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error ? new Error(error.message) : null };
   };
 
-  // ── Sign In ──────────────────────────────────────────────────────────────
+  // ── Sign In ───────────────────────────────────────────────────────────────
 
   const signIn = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -137,14 +143,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error: error ? new Error(error.message) : null };
   };
 
-  // ── Sign Out ─────────────────────────────────────────────────────────────
+  // ── Sign Out ──────────────────────────────────────────────────────────────
 
   const signOut = async () => {
     await supabase.auth.signOut();
   };
 
-  // ── Register WebAuthn ────────────────────────────────────────────────────
-  // password param: user's current password, stored for biometric re-auth
+  // ── Register WebAuthn ─────────────────────────────────────────────────────
 
   const registerWebAuthn = async (password: string) => {
     try {
@@ -161,13 +166,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!user)       return { error: new Error('Please sign in first') };
       if (!user.email) return { error: new Error('No email associated with this account') };
 
-      // Verify password is correct before storing
       const { error: verifyErr } = await supabase.auth.signInWithPassword({
         email: user.email, password,
       });
       if (verifyErr) return { error: new Error('Incorrect password — please try again') };
 
-      // Create WebAuthn credential on device
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
@@ -194,7 +197,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      // Store credentials protected by biometric
       saveCredentials({ email: user.email, password });
       setHasBiometric(true);
       return { error: null };
@@ -208,7 +210,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ── Sign In with WebAuthn ────────────────────────────────────────────────
+  // ── Sign In with WebAuthn ─────────────────────────────────────────────────
 
   const signInWithWebAuthn = async (_email?: string) => {
     try {
@@ -226,7 +228,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error('No biometric registered. Please set up biometric in Settings first.') };
       }
 
-      // Trigger biometric prompt
       const challenge = new Uint8Array(32);
       crypto.getRandomValues(challenge);
 
@@ -242,14 +243,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error('Biometric verification failed') };
       }
 
-      // Biometric passed — sign in to Supabase with stored creds
       const { error } = await supabase.auth.signInWithPassword({
         email:    creds.email,
         password: creds.password,
       });
 
       if (error) {
-        // Password may have changed — clear stale creds
         clearCredentials();
         setHasBiometric(false);
         return { error: new Error('Biometric credentials expired. Please sign in with password and re-register biometric in Settings.') };
@@ -269,7 +268,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ── Voice Passphrase ─────────────────────────────────────────────────────
+  // ── Voice Passphrase ──────────────────────────────────────────────────────
 
   const registerVoicePassphrase = async (passphrase: string) => {
     try {
@@ -333,6 +332,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return (
     <AuthContext.Provider value={{
       user,
+      session,
       loading,
       isRecoverySession,
       hasBiometric,
@@ -349,8 +349,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
+// ── useAuth hook ──────────────────────────────────────────────────────────────
+
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) throw new Error('useAuth must be used within AuthProvider');
   return context;
+}
+
+// ── useIsAdmin hook (from second project) ────────────────────────────────────
+
+export function useIsAdmin() {
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      setLoading(false);
+      return;
+    }
+
+    const checkAdmin = async () => {
+      const { data, error } = await supabase
+        .rpc('has_role', { _user_id: user.id, _role: 'admin' });
+      setIsAdmin(!!data && !error);
+      setLoading(false);
+    };
+
+    checkAdmin();
+  }, [user]);
+
+  return { isAdmin, loading };
 }

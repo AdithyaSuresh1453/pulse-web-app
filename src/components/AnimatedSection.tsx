@@ -6,12 +6,9 @@ interface Props {
   delay?: number;
 }
 
-const AnimatedSection: React.FC<Props> = ({ children, className = "", delay = 0 }) => {
+const AnimatedSection: React.FC<Props> = ({ children, className = "" }) => {
   return (
-    <div 
-      className={`animate-in fade-in slide-in-from-bottom-4 duration-700 ${className}`}
-      style={{ animationDelay: `${delay}ms`, animationFillMode: 'both' }}
-    >
+    <div className={className}>
       {children}
     </div>
   );

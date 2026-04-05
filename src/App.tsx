@@ -16,7 +16,7 @@ import { ResetPassword } from './pages/ResetPassword';
 import { Overview } from './pages/dashboard/Overview';
 import { RegisteredObjects } from './pages/dashboard/RegisteredObjects';
 import { AddObject } from './pages/dashboard/AddObject';
-import { LiveCamera } from './pages/dashboard/LiveCamera';
+import  LiveCamera  from './pages/dashboard/LiveCamera';
 import { AlertsHistory } from './pages/dashboard/AlertsHistory';
 import { PhoneRecovery } from './pages/dashboard/PhoneRecovery';
 import { Settings } from './pages/dashboard/Settings';
