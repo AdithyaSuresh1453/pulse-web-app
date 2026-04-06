@@ -5,7 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { DashboardLayout } from './components/DashboardLayout';
 import { VoiceAssistant } from './components/VoiceAssistant';
 import { NotificationSystem } from './components/NotificationSystem';
-
+import { TrackSender } from "./pages/TrackSender";
 // Corrected Import
 import HomeRouteMapping from './pages/dashboard/HomeRouteMapping';
 
@@ -101,6 +101,7 @@ function App() {
                   </ProtectedRoute>
                 }
               />
+              <Route path="/track" element={<TrackSender />} />
               <Route
                 path="/dashboard/settings"
                 element={

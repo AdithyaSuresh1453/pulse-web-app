@@ -4,18 +4,12 @@ import {
   ArrowLeft, Home, Plus, Navigation, MapPin,
   Square, Save, Layers, Move
 } from "lucide-react";
- 
-import Logo from "../../components/Logo"; 
+
+import Logo from "../../components/Logo";
 import AnimatedSection from "../../components/AnimatedSection";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { toast } from "sonner";
-
-/*import Logo from "@/components/Logo";
-import AnimatedSection from "@/components/AnimatedSection";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { toast } from "sonner";*/
 
 interface Room {
   id: string;
@@ -53,32 +47,52 @@ const roomColors = [
 ];
 
 const initialRooms: Room[] = [
-  { id: "r1", name: "Living Room", x: 20, y: 20, width: 220, height: 160, color: roomColors[0], shelves: [
-    { id: "s1", label: "Shelf 1", x: 40, y: 50 },
-    { id: "s2", label: "Shelf 2", x: 180, y: 130 },
+  { id: "r1", name: "Living Room", x: 20, y: 20, width: 200, height: 140, color: roomColors[0], shelves: [
+    { id: "s1", label: "Shelf 1", x: 60, y: 60 },
+    { id: "s2", label: "Shelf 2", x: 180, y: 120 },
   ]},
-  { id: "r2", name: "Bedroom", x: 260, y: 20, width: 180, height: 160, color: roomColors[1], shelves: [
-    { id: "s3", label: "Nightstand", x: 300, y: 60 },
+  { id: "r2", name: "Bedroom", x: 235, y: 20, width: 155, height: 140, color: roomColors[1], shelves: [
+    { id: "s3", label: "Nightstand", x: 290, y: 70 },
   ]},
-  { id: "r3", name: "Kitchen", x: 20, y: 200, width: 180, height: 130, color: roomColors[2], shelves: [
-    { id: "s4", label: "Counter", x: 60, y: 250 },
+  { id: "r3", name: "Kitchen", x: 20, y: 175, width: 160, height: 120, color: roomColors[2], shelves: [
+    { id: "s4", label: "Counter", x: 70, y: 220 },
   ]},
-  { id: "r4", name: "Office", x: 220, y: 200, width: 220, height: 130, color: roomColors[3], shelves: [
-    { id: "s5", label: "Drawer 1", x: 280, y: 240 },
-    { id: "s6", label: "Desk", x: 380, y: 280 },
+  { id: "r4", name: "Office", x: 195, y: 175, width: 195, height: 120, color: roomColors[3], shelves: [
+    { id: "s5", label: "Drawer 1", x: 250, y: 215 },
+    { id: "s6", label: "Desk", x: 355, y: 255 },
   ]},
 ];
 
 const initialObjects: ObjectMarker[] = [
-  { id: "o1", name: "House Keys", roomId: "r1", shelfId: "s2", x: 180, y: 130 },
-  { id: "o2", name: "Wallet", roomId: "r2", shelfId: "s3", x: 300, y: 60 },
-  { id: "o3", name: "iPhone", roomId: "r3", shelfId: "s4", x: 60, y: 250 },
-  { id: "o4", name: "ID Card", roomId: "r4", shelfId: "s5", x: 280, y: 240 },
+  { id: "o1", name: "House Keys", roomId: "r1", shelfId: "s2", x: 180, y: 120 },
+  { id: "o2", name: "Wallet", roomId: "r2", shelfId: "s3", x: 290, y: 70 },
+  { id: "o3", name: "iPhone", roomId: "r3", shelfId: "s4", x: 70, y: 220 },
+  { id: "o4", name: "ID Card", roomId: "r4", shelfId: "s5", x: 250, y: 215 },
 ];
 
 type Tool = "select" | "room" | "shelf" | "navigate";
 
 let shelfCounter = 7;
+
+const getEventCoords = (
+  e: React.MouseEvent | React.TouchEvent | MouseEvent | TouchEvent,
+  rect: DOMRect
+) => {
+  if ("touches" in e && e.touches.length > 0) {
+    return {
+      x: e.touches[0].clientX - rect.left,
+      y: e.touches[0].clientY - rect.top,
+    };
+  }
+  if ("changedTouches" in e && e.changedTouches.length > 0) {
+    return {
+      x: e.changedTouches[0].clientX - rect.left,
+      y: e.changedTouches[0].clientY - rect.top,
+    };
+  }
+  const me = e as React.MouseEvent;
+  return { x: me.clientX - rect.left, y: me.clientY - rect.top };
+};
 
 const HomeRouteMapping = () => {
   const [rooms, setRooms] = useState(initialRooms);
@@ -88,6 +102,11 @@ const HomeRouteMapping = () => {
   const [navPath, setNavPath] = useState<{ x: number; y: number }[] | null>(null);
   const [dragging, setDragging] = useState<{ roomId: string; offsetX: number; offsetY: number } | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  const didMoveRef = useRef(false);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
+  const getCanvasRect = () => canvasRef.current?.getBoundingClientRect() ?? new DOMRect();
 
   const navigateToObject = (obj: ObjectMarker) => {
     setSelectedObject(obj);
@@ -104,80 +123,95 @@ const HomeRouteMapping = () => {
     return points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ");
   };
 
-  const getCanvasCoords = useCallback((e: React.MouseEvent) => {
-    if (!canvasRef.current) return { x: 0, y: 0 };
-    const rect = canvasRef.current.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }, []);
+  const startDrag = useCallback(
+    (e: React.MouseEvent | React.TouchEvent, roomId: string) => {
+      if (activeTool !== "select") return;
+      e.preventDefault();
+      e.stopPropagation();
+      const rect = getCanvasRect();
+      const coords = getEventCoords(e, rect);
+      const room = rooms.find((r) => r.id === roomId);
+      if (!room) return;
+      didMoveRef.current = false;
+      touchStartPosRef.current = coords;
+      setDragging({ roomId, offsetX: coords.x - room.x, offsetY: coords.y - room.y });
+    },
+    [activeTool, rooms]
+  );
 
-  // Room dragging
-  const handleRoomMouseDown = useCallback((e: React.MouseEvent, roomId: string) => {
-    if (activeTool !== "select") return;
-    e.stopPropagation();
-    const room = rooms.find((r) => r.id === roomId);
-    if (!room) return;
-    const coords = getCanvasCoords(e);
-    setDragging({ roomId, offsetX: coords.x - room.x, offsetY: coords.y - room.y });
-  }, [activeTool, rooms, getCanvasCoords]);
+  const handleMove = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      if (!dragging) return;
+      const rect = getCanvasRect();
+      const coords = getEventCoords(e, rect);
+      if (touchStartPosRef.current) {
+        const dx = Math.abs(coords.x - touchStartPosRef.current.x);
+        const dy = Math.abs(coords.y - touchStartPosRef.current.y);
+        if (dx > 4 || dy > 4) didMoveRef.current = true;
+      }
+      setRooms((prev) =>
+        prev.map((r) =>
+          r.id === dragging.roomId
+            ? { ...r, x: Math.max(0, coords.x - dragging.offsetX), y: Math.max(0, coords.y - dragging.offsetY) }
+            : r
+        )
+      );
+    },
+    [dragging]
+  );
 
-  const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
-    if (!dragging) return;
-    const coords = getCanvasCoords(e);
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id === dragging.roomId
-          ? { ...r, x: Math.max(0, coords.x - dragging.offsetX), y: Math.max(0, coords.y - dragging.offsetY) }
-          : r
-      )
-    );
-  }, [dragging, getCanvasCoords]);
-
-  const handleCanvasMouseUp = useCallback(() => {
+  const handleEnd = useCallback(() => {
     setDragging(null);
   }, []);
 
-  // Click to place shelf
-  const handleCanvasClick = useCallback((e: React.MouseEvent) => {
-    if (activeTool !== "shelf") return;
-    const coords = getCanvasCoords(e);
-    // Find which room was clicked
-    const targetRoom = rooms.find(
-      (r) => coords.x >= r.x && coords.x <= r.x + r.width && coords.y >= r.y && coords.y <= r.y + r.height
-    );
-    if (!targetRoom) {
-      toast.error("Click inside a room to place a shelf");
-      return;
-    }
-    const newShelf: Shelf = {
-      id: `s${shelfCounter++}`,
-      label: `Shelf ${shelfCounter}`,
-      x: coords.x,
-      y: coords.y,
-    };
-    setRooms((prev) =>
-      prev.map((r) =>
-        r.id === targetRoom.id ? { ...r, shelves: [...r.shelves, newShelf] } : r
-      )
-    );
-    toast.success(`Shelf placed in ${targetRoom.name}`);
-  }, [activeTool, rooms, getCanvasCoords]);
+  const handleCanvasClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (activeTool !== "shelf") return;
+      const rect = getCanvasRect();
+      const coords = getEventCoords(e, rect);
+      const targetRoom = rooms.find(
+        (r) => coords.x >= r.x && coords.x <= r.x + r.width && coords.y >= r.y && coords.y <= r.y + r.height
+      );
+      if (!targetRoom) { toast.error("Tap inside a room to place a shelf"); return; }
+      const newShelf: Shelf = { id: `s${shelfCounter++}`, label: `Shelf ${shelfCounter}`, x: coords.x, y: coords.y };
+      setRooms((prev) => prev.map((r) => r.id === targetRoom.id ? { ...r, shelves: [...r.shelves, newShelf] } : r));
+      toast.success(`Shelf placed in ${targetRoom.name}`);
+    },
+    [activeTool, rooms]
+  );
 
-  // Click to add a new room
+  const handleCanvasTouchEnd = useCallback(
+    (e: React.TouchEvent) => {
+      if (dragging) { handleEnd(); return; }
+      if (activeTool !== "shelf") return;
+      const rect = getCanvasRect();
+      const coords = getEventCoords(e, rect);
+      const targetRoom = rooms.find(
+        (r) => coords.x >= r.x && coords.x <= r.x + r.width && coords.y >= r.y && coords.y <= r.y + r.height
+      );
+      if (!targetRoom) { toast.error("Tap inside a room to place a shelf"); return; }
+      const newShelf: Shelf = { id: `s${shelfCounter++}`, label: `Shelf ${shelfCounter}`, x: coords.x, y: coords.y };
+      setRooms((prev) => prev.map((r) => r.id === targetRoom.id ? { ...r, shelves: [...r.shelves, newShelf] } : r));
+      toast.success(`Shelf placed in ${targetRoom.name}`);
+    },
+    [activeTool, dragging, handleEnd, rooms]
+  );
+
   const addNewRoom = () => {
     const id = `r${Date.now()}`;
     const colorIdx = rooms.length % roomColors.length;
     setRooms((prev) => [
       ...prev,
-      { id, name: `Room ${rooms.length + 1}`, x: 50, y: 50, width: 160, height: 120, color: roomColors[colorIdx], shelves: [] },
+      { id, name: `Room ${rooms.length + 1}`, x: 50, y: 50, width: 150, height: 110, color: roomColors[colorIdx], shelves: [] },
     ]);
     setActiveTool("select");
     toast.success("New room added — drag to reposition");
   };
 
   const tools: { key: Tool; icon: typeof Move; label: string }[] = [
-    { key: "select", icon: Move, label: "Select & Drag" },
+    { key: "select", icon: Move, label: "Select" },
     { key: "room", icon: Square, label: "Add Room" },
-    { key: "shelf", icon: Layers, label: "Place Shelf" },
+    { key: "shelf", icon: Layers, label: "Shelf" },
     { key: "navigate", icon: Navigation, label: "Navigate" },
   ];
 
@@ -195,10 +229,11 @@ const HomeRouteMapping = () => {
         </div>
       </header>
 
-      <main className="container py-8 space-y-6">
+      <main className="container py-4 md:py-8 space-y-4 md:space-y-6">
+
         {/* Toolbar */}
         <AnimatedSection>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
             {tools.map((t) => (
               <button
                 key={t.key}
@@ -207,29 +242,32 @@ const HomeRouteMapping = () => {
                   setActiveTool(t.key);
                   if (t.key !== "navigate") { setNavPath(null); setSelectedObject(null); }
                 }}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
                   activeTool === t.key
                     ? "bg-primary text-primary-foreground"
                     : "glass text-muted-foreground hover:text-foreground"
                 }`}
               >
-                <t.icon className="w-4 h-4" /> {t.label}
+                <t.icon className="w-4 h-4" />
+                <span className="whitespace-nowrap">{t.label}</span>
               </button>
             ))}
-            <div className="flex-1" />
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => toast.info("Layout saved!")}>
-              <Save className="w-4 h-4" /> Save Layout
-            </Button>
+            <div className="flex-shrink-0 ml-auto">
+              <Button variant="outline" size="sm" className="gap-1.5 whitespace-nowrap" onClick={() => toast.info("Layout saved!")}>
+                <Save className="w-4 h-4" /> Save
+              </Button>
+            </div>
           </div>
           {activeTool === "shelf" && (
-            <p className="text-xs text-muted-foreground mt-2 ml-1">Click inside any room to place a shelf marker</p>
+            <p className="text-xs text-muted-foreground mt-2 ml-1">Tap inside any room to place a shelf marker</p>
           )}
           {activeTool === "select" && (
-            <p className="text-xs text-muted-foreground mt-2 ml-1">Drag rooms to reposition them on the floor plan</p>
+            <p className="text-xs text-muted-foreground mt-2 ml-1">Drag rooms to reposition them</p>
           )}
         </AnimatedSection>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-3 gap-4 md:gap-6">
+
           {/* Canvas */}
           <AnimatedSection delay={100} className="lg:col-span-2">
             <Card className="glass border-border">
@@ -239,101 +277,110 @@ const HomeRouteMapping = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                {/* Scrollable viewport */}
                 <div
-                  ref={canvasRef}
-                  className={`relative w-full bg-secondary/30 rounded-xl overflow-hidden border border-border select-none ${
-                    activeTool === "shelf" ? "cursor-crosshair" : activeTool === "select" ? "cursor-default" : ""
-                  }`}
-                  style={{ height: 380 }}
-                  onMouseMove={handleCanvasMouseMove}
-                  onMouseUp={handleCanvasMouseUp}
-                  onMouseLeave={handleCanvasMouseUp}
-                  onClick={handleCanvasClick}
+                  className="w-full rounded-xl border border-border overflow-auto"
+                  style={{ height: "clamp(400px, 65vw, 600px)" }}
                 >
-                  {/* Grid */}
-                  <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-10">
-                    <defs>
-                      <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" strokeWidth="0.5" />
-                      </pattern>
-                    </defs>
-                    <rect width="100%" height="100%" fill="url(#grid)" />
-                  </svg>
-
-                  {/* Rooms */}
-                  {rooms.map((room) => (
-                    <div
-                      key={room.id}
-                      onMouseDown={(e) => handleRoomMouseDown(e, room.id)}
-                      className={`absolute border-2 border-dashed rounded-lg flex items-start justify-start p-2 ${
-                        activeTool === "select"
-                          ? "cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-primary/10"
-                          : ""
-                      } ${dragging?.roomId === room.id ? "opacity-80 ring-2 ring-primary" : ""}`}
-                      style={{
-                        left: room.x,
-                        top: room.y,
-                        width: room.width,
-                        height: room.height,
-                        backgroundColor: room.color,
-                        borderColor: room.color.replace("0.15", "0.5"),
-                        transition: dragging?.roomId === room.id ? "none" : "box-shadow 0.2s",
-                      }}
-                    >
-                      <span className="text-[10px] font-heading font-semibold text-foreground/70 bg-background/50 px-1.5 py-0.5 rounded pointer-events-none">
-                        {room.name}
-                      </span>
-
-                      {/* Shelves */}
-                      {room.shelves.map((shelf) => (
-                        <div
-                          key={shelf.id}
-                          className="absolute w-3 h-3 bg-accent/60 rounded-sm border border-accent/30 hover:scale-125 transition-transform"
-                          style={{ left: shelf.x - room.x, top: shelf.y - room.y }}
-                          title={shelf.label}
-                        />
-                      ))}
-                    </div>
-                  ))}
-
-                  {/* Navigation path */}
-                  {navPath && (
-                    <svg className="absolute inset-0 w-full h-full pointer-events-none">
-                      <path
-                        d={pathToSvg(navPath)}
-                        fill="none"
-                        stroke="hsl(199 89% 48%)"
-                        strokeWidth="3"
-                        strokeDasharray="8 4"
-                        strokeLinecap="round"
-                        className="animate-pulse"
-                      />
+                  {/* Fixed-size canvas that rooms live on */}
+                  <div
+                    ref={canvasRef}
+                    className={`relative bg-secondary/30 select-none ${
+                      activeTool === "shelf" ? "cursor-crosshair" : activeTool === "select" ? "cursor-default" : ""
+                    }`}
+                    style={{ width: 500, height: 380, touchAction: "none" }}
+                    onMouseMove={handleMove}
+                    onMouseUp={handleEnd}
+                    onMouseLeave={handleEnd}
+                    onClick={handleCanvasClick}
+                    onTouchMove={handleMove}
+                    onTouchEnd={handleCanvasTouchEnd}
+                  >
+                    {/* Grid */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-10">
+                      <defs>
+                        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="currentColor" strokeWidth="0.5" />
+                        </pattern>
+                      </defs>
+                      <rect width="100%" height="100%" fill="url(#grid)" />
                     </svg>
-                  )}
 
-                  {/* Object markers */}
-                  {objects.map((obj) => (
-                    <button
-                      key={obj.id}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        activeTool === "navigate" ? navigateToObject(obj) : setSelectedObject(obj);
-                      }}
-                      className={`absolute w-6 h-6 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center transition-all z-10 ${
-                        selectedObject?.id === obj.id
-                          ? "bg-primary scale-125 shadow-lg shadow-primary/40"
-                          : "bg-accent hover:scale-110"
-                      }`}
-                      style={{ left: obj.x, top: obj.y }}
-                      title={obj.name}
-                    >
-                      <MapPin className="w-3 h-3 text-primary-foreground" />
-                    </button>
-                  ))}
+                    {/* Rooms */}
+                    {rooms.map((room) => (
+                      <div
+                        key={room.id}
+                        onMouseDown={(e) => startDrag(e, room.id)}
+                        onTouchStart={(e) => startDrag(e, room.id)}
+                        className={`absolute border-2 border-dashed rounded-lg flex items-start justify-start p-2 ${
+                          activeTool === "select"
+                            ? "cursor-grab active:cursor-grabbing hover:shadow-lg hover:shadow-primary/10"
+                            : ""
+                        } ${dragging?.roomId === room.id ? "opacity-80 ring-2 ring-primary" : ""}`}
+                        style={{
+                          left: room.x,
+                          top: room.y,
+                          width: room.width,
+                          height: room.height,
+                          backgroundColor: room.color,
+                          borderColor: room.color.replace("0.15", "0.5"),
+                          transition: dragging?.roomId === room.id ? "none" : "box-shadow 0.2s",
+                        }}
+                      >
+                        <span className="text-[10px] font-heading font-semibold text-foreground/70 bg-background/50 px-1.5 py-0.5 rounded pointer-events-none">
+                          {room.name}
+                        </span>
+                        {room.shelves.map((shelf) => (
+                          <div
+                            key={shelf.id}
+                            className="absolute w-3 h-3 bg-accent/60 rounded-sm border border-accent/30 hover:scale-125 transition-transform"
+                            style={{ left: shelf.x - room.x, top: shelf.y - room.y }}
+                            title={shelf.label}
+                          />
+                        ))}
+                      </div>
+                    ))}
 
-                  {/* Entrance marker */}
-                  <div className="absolute left-0 top-[180px] w-5 h-8 bg-primary/30 rounded-r-lg flex items-center justify-center">
-                    <span className="text-[8px] font-bold text-primary">IN</span>
+                    {/* Navigation path */}
+                    {navPath && (
+                      <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                        <path
+                          d={pathToSvg(navPath)}
+                          fill="none"
+                          stroke="hsl(199 89% 48%)"
+                          strokeWidth="3"
+                          strokeDasharray="8 4"
+                          strokeLinecap="round"
+                          className="animate-pulse"
+                        />
+                      </svg>
+                    )}
+
+                    {/* Object markers */}
+                    {objects.map((obj) => (
+                      <button
+                        key={obj.id}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          activeTool === "navigate" ? navigateToObject(obj) : setSelectedObject(obj);
+                        }}
+                        className={`absolute w-7 h-7 -translate-x-1/2 -translate-y-1/2 rounded-full flex items-center justify-center transition-all z-10 ${
+                          selectedObject?.id === obj.id
+                            ? "bg-primary scale-125 shadow-lg shadow-primary/40"
+                            : "bg-accent hover:scale-110"
+                        }`}
+                        style={{ left: obj.x, top: obj.y }}
+                        title={obj.name}
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-primary-foreground" />
+                      </button>
+                    ))}
+
+                    {/* Entrance marker */}
+                    <div className="absolute left-0 top-[180px] w-5 h-8 bg-primary/30 rounded-r-lg flex items-center justify-center">
+                      <span className="text-[8px] font-bold text-primary">IN</span>
+                    </div>
                   </div>
                 </div>
               </CardContent>
@@ -360,7 +407,7 @@ const HomeRouteMapping = () => {
                         className={`w-full text-left p-3 rounded-xl transition-all ${
                           selectedObject?.id === obj.id
                             ? "bg-primary/10 border border-primary/30"
-                            : "hover:bg-secondary/60"
+                            : "hover:bg-secondary/60 active:bg-secondary/80"
                         }`}
                       >
                         <p className="text-sm font-medium">{obj.name}</p>
@@ -391,18 +438,14 @@ const HomeRouteMapping = () => {
                       <span className="text-xs text-muted-foreground">{room.shelves.length} shelves</span>
                     </div>
                   ))}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full gap-2 mt-2"
-                    onClick={addNewRoom}
-                  >
+                  <Button variant="outline" size="sm" className="w-full gap-2 mt-2" onClick={addNewRoom}>
                     <Plus className="w-4 h-4" /> Add Room
                   </Button>
                 </CardContent>
               </Card>
             </AnimatedSection>
           </div>
+
         </div>
       </main>
     </div>
